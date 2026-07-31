@@ -62,3 +62,8 @@ Le modèle doit être considéré comme indicatif : la phénologie du pommier d�
 - L’alerte gel repose sur la température minimale de l’air prévue ; elle ne calcule ni température humide ni température des organes.
 - Aucun seuil universel de degrés-jours ne décrit parfaitement tous les cultivars de pommier en France.
 - Cette application est un outil d’aide au suivi et ne remplace pas l’observation au verger.
+
+
+## Historique des stades
+
+Un onglet dédié affiche la date de passage de chaque stade déjà atteint. Une date saisie sur le terrain est marquée « Observée » ; sinon, la date est calculée à partir du cumul de degrés-jours et marquée « Estimée ».

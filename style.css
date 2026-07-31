@@ -80,3 +80,16 @@ footer { padding: 24px; text-align: center; color: var(--muted); font-size: .82r
   .section-heading { align-items: stretch; flex-direction: column; }
   .observation-row { grid-template-columns: 90px 1fr auto; }
 }
+
+.tabs { width: min(1050px, calc(100% - 28px)); margin: 18px auto 0; display: flex; gap: 8px; }
+.tab-button { background: transparent; color: var(--brand-dark); border: 1px solid #DDC7CB; }
+.tab-button.active { background: var(--brand); color: white; border-color: var(--brand); }
+.view { display: grid; gap: 18px; }
+.stage-history-table { min-width: 650px; }
+.source-badge { display: inline-block; padding: 5px 9px; border-radius: 999px; font-size: .75rem; font-weight: 800; }
+.source-badge.observed { background: #E4F3EA; color: var(--success); }
+.source-badge.estimated { background: var(--brand-soft); color: var(--brand-dark); }
+@media (max-width: 700px) {
+  .tabs { width: min(100% - 20px, 1050px); margin-top: 12px; }
+  .tabs .tab-button { flex: 1; padding-inline: 8px; }
+}

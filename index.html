@@ -19,7 +19,13 @@
     <button id="installBtn" class="secondary hidden" type="button">Installer</button>
   </header>
 
+  <nav class="tabs" aria-label="Navigation principale">
+    <button id="dashboardTabBtn" class="tab-button active" type="button" aria-selected="true">Suivi actuel</button>
+    <button id="historyTabBtn" class="tab-button" type="button" aria-selected="false">Historique des stades</button>
+  </nav>
+
   <main>
+    <div id="dashboardView" class="view">
     <section class="card" aria-labelledby="parcel-title">
       <div class="section-heading">
         <div>
@@ -135,6 +141,26 @@
         </div>
       </details>
     </section>
+    </div>
+
+    <div id="historyView" class="view hidden">
+      <section class="card" aria-labelledby="stage-history-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Chronologie</p>
+            <h2 id="stage-history-title">Dates de passage des stades</h2>
+          </div>
+        </div>
+        <p class="hint">Les dates observées sont prioritaires. Les autres dates sont estimées à partir du cumul de degrés-jours recalé.</p>
+        <div id="stageHistoryStatus" class="loading-state">Aucune donnée chargée.</div>
+        <div id="stageHistoryWrap" class="table-wrap hidden">
+          <table class="stage-history-table">
+            <thead><tr><th>Stade</th><th>Code BBCH</th><th>Date de passage</th><th>Origine</th></tr></thead>
+            <tbody id="stageHistoryBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
   </main>
 
   <footer>

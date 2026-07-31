@@ -42,10 +42,12 @@ function init() {
 }
 
 function cacheElements() {
-  ['parcelSelect','parcelName','variety','latitude','longitude','stageBDate','baseTemp','gpsBtn','saveParcelBtn','newParcelBtn','deleteParcelBtn','stageMain','stageBbch','gddTotal','nextStage','nextDate','calibrationNotice','alertsSection','alertsList','observationDate','observationStage','addObservationBtn','observationsList','refreshBtn','weatherStatus','forecastTableWrap','forecastBody','toast','installBtn'].forEach(id => els[id] = document.getElementById(id));
+  ['dashboardTabBtn','historyTabBtn','dashboardView','historyView','stageHistoryStatus','stageHistoryWrap','stageHistoryBody','parcelSelect','parcelName','variety','latitude','longitude','stageBDate','baseTemp','gpsBtn','saveParcelBtn','newParcelBtn','deleteParcelBtn','stageMain','stageBbch','gddTotal','nextStage','nextDate','calibrationNotice','alertsSection','alertsList','observationDate','observationStage','addObservationBtn','observationsList','refreshBtn','weatherStatus','forecastTableWrap','forecastBody','toast','installBtn'].forEach(id => els[id] = document.getElementById(id));
 }
 
 function bindEvents() {
+  els.dashboardTabBtn.addEventListener('click', () => switchView('dashboard'));
+  els.historyTabBtn.addEventListener('click', () => switchView('history'));
   els.parcelSelect.addEventListener('change', () => {
     state.activeParcelId = els.parcelSelect.value;
     persistState();
@@ -67,6 +69,18 @@ function bindEvents() {
     els.installBtn.classList.remove('hidden');
   });
   els.installBtn.addEventListener('click', installApp);
+}
+
+
+function switchView(view) {
+  const history = view === 'history';
+  els.dashboardView.classList.toggle('hidden', history);
+  els.historyView.classList.toggle('hidden', !history);
+  els.dashboardTabBtn.classList.toggle('active', !history);
+  els.historyTabBtn.classList.toggle('active', history);
+  els.dashboardTabBtn.setAttribute('aria-selected', String(!history));
+  els.historyTabBtn.setAttribute('aria-selected', String(history));
+  if (history) renderStageHistory();
 }
 
 function ensureInitialParcel() {
@@ -257,6 +271,7 @@ function renderPhenology() {
     els.gddTotal.textContent = '—';
     els.nextStage.textContent = '—';
     els.nextDate.textContent = '—';
+    renderStageHistory();
     return;
   }
   const base = Number(p.baseTemp) || 5;
@@ -287,6 +302,7 @@ function renderPhenology() {
   }
   renderAlerts(series, current, currentStage, next, predicted);
   renderForecastTable(series, todayIso);
+  renderStageHistory(series, todayIso);
 }
 
 function computeSeries(weather, startDate, base, observations) {
@@ -311,6 +327,48 @@ function stageForGdd(gdd) {
 
 function latestObservationBefore(observations, date) {
   return [...observations].filter(o => o.date <= date).sort((a,b) => b.date.localeCompare(a.date))[0] || null;
+}
+
+
+function renderStageHistory(series = null, todayIso = isoDate(new Date())) {
+  const p = activeParcel();
+  if (!p || !activeWeather) {
+    els.stageHistoryStatus.textContent = p && p.latitude !== '' ? 'Chargez les données météo pour calculer les dates.' : 'Renseignez les coordonnées GPS de la parcelle.';
+    els.stageHistoryWrap.classList.add('hidden');
+    return;
+  }
+
+  if (!series) {
+    const base = Number(p.baseTemp) || 5;
+    const startDate = p.stageBDate || `${new Date().getFullYear()}-03-01`;
+    series = computeSeries(activeWeather, startDate, base, p.observations || []);
+  }
+
+  const observations = p.observations || [];
+  const reached = STAGES.map(stage => {
+    const observed = [...observations]
+      .filter(o => o.stage === stage.id && o.date <= todayIso)
+      .sort((a, b) => a.date.localeCompare(b.date))[0];
+    const estimated = series.find(day => day.date <= todayIso && day.adjustedGdd >= stage.gdd);
+    const date = observed?.date || estimated?.date || null;
+    return date ? { stage, date, source: observed ? 'Observée' : 'Estimée' } : null;
+  }).filter(Boolean);
+
+  if (!reached.length) {
+    els.stageHistoryStatus.textContent = 'Aucun stade n’est encore daté pour cette parcelle.';
+    els.stageHistoryWrap.classList.add('hidden');
+    return;
+  }
+
+  els.stageHistoryBody.innerHTML = reached.map(item => `
+    <tr>
+      <td><strong>${item.stage.label}</strong></td>
+      <td>${item.stage.bbch}</td>
+      <td>${formatDate(item.date)}</td>
+      <td><span class="source-badge ${item.source === 'Observée' ? 'observed' : 'estimated'}">${item.source}</span></td>
+    </tr>`).join('');
+  els.stageHistoryStatus.textContent = `${reached.length} stade${reached.length > 1 ? 's' : ''} déjà atteint${reached.length > 1 ? 's' : ''}.`;
+  els.stageHistoryWrap.classList.remove('hidden');
 }
 
 function renderAlerts(series, current, currentStage, next, predicted) {
