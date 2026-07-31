@@ -21,7 +21,7 @@
 
   <nav class="tabs" aria-label="Navigation principale">
     <button id="dashboardTabBtn" class="tab-button active" type="button" aria-selected="true">Suivi actuel</button>
-    <button id="historyTabBtn" class="tab-button" type="button" aria-selected="false">Historique des stades</button>
+    <button id="historyTabBtn" class="tab-button" type="button" aria-selected="false">Historique &amp; courbe</button>
   </nav>
 
   <main>
@@ -160,11 +160,46 @@
           </table>
         </div>
       </section>
+
+      <section class="card" aria-labelledby="gdd-chart-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Évolution thermique</p>
+            <h2 id="gdd-chart-title">Courbe cumulée des degrés-jours</h2>
+          </div>
+        </div>
+
+        <div class="chart-metrics" aria-label="Résumé de la courbe">
+          <div class="chart-metric">
+            <span>Aujourd’hui</span>
+            <strong id="chartCurrentGdd">—</strong>
+          </div>
+          <div class="chart-metric">
+            <span>Seuil du prochain stade</span>
+            <strong id="chartNextThreshold">—</strong>
+          </div>
+          <div class="chart-metric">
+            <span>Fin de prévision</span>
+            <strong id="chartForecastEnd">—</strong>
+          </div>
+        </div>
+
+        <div class="chart-legend" aria-label="Légende de la courbe">
+          <span><i class="legend-line history-line"></i>Historique</span>
+          <span><i class="legend-line forecast-line"></i>Prévision Open-Meteo</span>
+          <span><i class="legend-dot"></i>Observation terrain</span>
+        </div>
+
+        <div id="gddChartStatus" class="loading-state">Aucune donnée chargée.</div>
+        <div class="chart-wrap">
+          <canvas id="gddChart" role="img" aria-label="Courbe du cumul des degrés-jours avec seuils des stades phénologiques"></canvas>
+        </div>
+      </section>
     </div>
   </main>
 
   <footer>
-    <strong>SudExpé</strong> · Outil d’aide au suivi, non contractuel.
+    <strong>SudExpé</strong> · Outil d’aide au suivi, non contractuel. · Version 1.2
   </footer>
 
   <div id="toast" role="status" aria-live="polite"></div>

@@ -13,7 +13,9 @@ Application web progressive (PWA) de suivi des stades phénologiques du pommier 
 - recalage automatique à chaque observation terrain ;
 - alertes de stade proche et de gel pour les stades sensibles ;
 - fonctionnement hors connexion avec les dernières données enregistrées ;
-- installation possible sur téléphone.
+- installation possible sur téléphone ;
+- onglet **Historique & courbe** avec la date de passage des stades atteints ;
+- courbe cumulée des degrés-jours, séparation historique/prévision, seuils de stades et observations terrain.
 
 ## Mise en ligne avec GitHub Pages
 
@@ -67,3 +69,16 @@ Le modèle doit être considéré comme indicatif : la phénologie du pommier d�
 ## Historique des stades
 
 Un onglet dédié affiche la date de passage de chaque stade déjà atteint. Une date saisie sur le terrain est marquée « Observée » ; sinon, la date est calculée à partir du cumul de degrés-jours et marquée « Estimée ».
+
+
+## Mise à jour depuis une ancienne version
+
+La version 1.2 utilise un nouveau cache hors connexion. Après avoir remplacé les fichiers sur GitHub, ouvrir l’application avec une connexion internet puis actualiser la page. Si l’ancienne interface reste visible, effectuer une actualisation forcée (`Ctrl + F5`) ou fermer puis rouvrir l’application installée.
+
+Dans l’onglet **Historique & courbe** :
+
+- le tableau affiche uniquement les stades déjà atteints ;
+- une date issue d’une saisie terrain est marquée **Observée** ;
+- une date calculée à partir des degrés-jours est marquée **Estimée** ;
+- la courbe distingue l’historique météo de la prévision Open-Meteo sur 16 jours ;
+- les seuils Fleckinger sont indiqués sur l’axe vertical et les observations terrain sont matérialisées par des points.

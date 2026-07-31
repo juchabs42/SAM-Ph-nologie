@@ -24,6 +24,7 @@ const els = {};
 let state = loadState();
 let activeWeather = null;
 let deferredInstallPrompt = null;
+let chartResizeTimer = null;
 
 window.addEventListener('DOMContentLoaded', init);
 
@@ -42,7 +43,7 @@ function init() {
 }
 
 function cacheElements() {
-  ['dashboardTabBtn','historyTabBtn','dashboardView','historyView','stageHistoryStatus','stageHistoryWrap','stageHistoryBody','parcelSelect','parcelName','variety','latitude','longitude','stageBDate','baseTemp','gpsBtn','saveParcelBtn','newParcelBtn','deleteParcelBtn','stageMain','stageBbch','gddTotal','nextStage','nextDate','calibrationNotice','alertsSection','alertsList','observationDate','observationStage','addObservationBtn','observationsList','refreshBtn','weatherStatus','forecastTableWrap','forecastBody','toast','installBtn'].forEach(id => els[id] = document.getElementById(id));
+  ['dashboardTabBtn','historyTabBtn','dashboardView','historyView','stageHistoryStatus','stageHistoryWrap','stageHistoryBody','gddChartStatus','gddChart','chartCurrentGdd','chartNextThreshold','chartForecastEnd','parcelSelect','parcelName','variety','latitude','longitude','stageBDate','baseTemp','gpsBtn','saveParcelBtn','newParcelBtn','deleteParcelBtn','stageMain','stageBbch','gddTotal','nextStage','nextDate','calibrationNotice','alertsSection','alertsList','observationDate','observationStage','addObservationBtn','observationsList','refreshBtn','weatherStatus','forecastTableWrap','forecastBody','toast','installBtn'].forEach(id => els[id] = document.getElementById(id));
 }
 
 function bindEvents() {
@@ -69,6 +70,12 @@ function bindEvents() {
     els.installBtn.classList.remove('hidden');
   });
   els.installBtn.addEventListener('click', installApp);
+  window.addEventListener('resize', () => {
+    clearTimeout(chartResizeTimer);
+    chartResizeTimer = setTimeout(() => {
+      if (!els.historyView.classList.contains('hidden')) renderGddChart();
+    }, 120);
+  });
 }
 
 
@@ -80,7 +87,10 @@ function switchView(view) {
   els.historyTabBtn.classList.toggle('active', history);
   els.dashboardTabBtn.setAttribute('aria-selected', String(!history));
   els.historyTabBtn.setAttribute('aria-selected', String(history));
-  if (history) renderStageHistory();
+  if (history) {
+    renderStageHistory();
+    renderGddChart();
+  }
 }
 
 function ensureInitialParcel() {
@@ -272,6 +282,7 @@ function renderPhenology() {
     els.nextStage.textContent = '—';
     els.nextDate.textContent = '—';
     renderStageHistory();
+    renderGddChart();
     return;
   }
   const base = Number(p.baseTemp) || 5;
@@ -303,6 +314,7 @@ function renderPhenology() {
   renderAlerts(series, current, currentStage, next, predicted);
   renderForecastTable(series, todayIso);
   renderStageHistory(series, todayIso);
+  renderGddChart(series, todayIso);
 }
 
 function computeSeries(weather, startDate, base, observations) {
@@ -346,12 +358,15 @@ function renderStageHistory(series = null, todayIso = isoDate(new Date())) {
 
   const observations = p.observations || [];
   const reached = STAGES.map(stage => {
-    const observed = [...observations]
+    const terrainDates = observations
       .filter(o => o.stage === stage.id && o.date <= todayIso)
-      .sort((a, b) => a.date.localeCompare(b.date))[0];
+      .map(o => o.date);
+    if (stage.id === 'B' && p.stageBDate && p.stageBDate <= todayIso) terrainDates.push(p.stageBDate);
+    terrainDates.sort((a, b) => a.localeCompare(b));
+    const observedDate = terrainDates[0] || null;
     const estimated = series.find(day => day.date <= todayIso && day.adjustedGdd >= stage.gdd);
-    const date = observed?.date || estimated?.date || null;
-    return date ? { stage, date, source: observed ? 'Observée' : 'Estimée' } : null;
+    const date = observedDate || estimated?.date || null;
+    return date ? { stage, date, source: observedDate ? 'Observée' : 'Estimée' } : null;
   }).filter(Boolean);
 
   if (!reached.length) {
@@ -362,13 +377,258 @@ function renderStageHistory(series = null, todayIso = isoDate(new Date())) {
 
   els.stageHistoryBody.innerHTML = reached.map(item => `
     <tr>
-      <td><strong>${item.stage.label}</strong></td>
-      <td>${item.stage.bbch}</td>
-      <td>${formatDate(item.date)}</td>
-      <td><span class="source-badge ${item.source === 'Observée' ? 'observed' : 'estimated'}">${item.source}</span></td>
+      <td data-label="Stade"><strong>${item.stage.label}</strong></td>
+      <td data-label="Code BBCH">${item.stage.bbch}</td>
+      <td data-label="Date de passage">${formatDate(item.date)}</td>
+      <td data-label="Origine"><span class="source-badge ${item.source === 'Observée' ? 'observed' : 'estimated'}">${item.source}</span></td>
     </tr>`).join('');
   els.stageHistoryStatus.textContent = `${reached.length} stade${reached.length > 1 ? 's' : ''} déjà atteint${reached.length > 1 ? 's' : ''}.`;
   els.stageHistoryWrap.classList.remove('hidden');
+}
+
+
+function renderGddChart(series = null, todayIso = isoDate(new Date())) {
+  const p = activeParcel();
+  const canvas = els.gddChart;
+  if (!canvas) return;
+
+  if (!p || !activeWeather) {
+    els.gddChartStatus.textContent = p && p.latitude !== ''
+      ? 'Chargez les données météo pour afficher la courbe.'
+      : 'Renseignez les coordonnées GPS de la parcelle.';
+    els.chartCurrentGdd.textContent = '—';
+    els.chartNextThreshold.textContent = '—';
+    els.chartForecastEnd.textContent = '—';
+    clearCanvas(canvas);
+    return;
+  }
+
+  if (!series) {
+    const base = Number(p.baseTemp) || 5;
+    const startDate = p.stageBDate || `${new Date().getFullYear()}-03-01`;
+    series = computeSeries(activeWeather, startDate, base, p.observations || []);
+  }
+
+  if (!series.length) {
+    els.gddChartStatus.textContent = 'Aucune donnée disponible pour la période sélectionnée.';
+    clearCanvas(canvas);
+    return;
+  }
+
+  const current = [...series].reverse().find(day => day.date <= todayIso) || series[0];
+  const currentStage = stageForGdd(current.adjustedGdd);
+  const nextStage = STAGES.find(stage => stage.gdd > current.adjustedGdd);
+  const lastForecast = [...series].reverse().find(day => day.type === 'forecast') || series[series.length - 1];
+
+  els.chartCurrentGdd.textContent = `${Math.round(current.rawGdd)} °C·j`;
+  els.chartNextThreshold.textContent = nextStage ? `${nextStage.id} · ${nextStage.gdd} °C·j` : 'Cycle suivi terminé';
+  els.chartForecastEnd.textContent = `${Math.round(lastForecast.rawGdd)} °C·j`;
+  els.gddChartStatus.textContent = `Du ${formatDate(series[0].date)} au ${formatDate(series[series.length - 1].date)} · stade actuel ${currentStage.id}.`;
+
+  const chartObservations = [...(p.observations || [])];
+  if (p.stageBDate && !chartObservations.some(observation => observation.stage === 'B' && observation.date === p.stageBDate)) {
+    chartObservations.push({ stage: 'B', date: p.stageBDate });
+  }
+  drawGddChart(canvas, series, todayIso, chartObservations);
+}
+
+function clearCanvas(canvas) {
+  const context = canvas.getContext('2d');
+  context.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+function drawGddChart(canvas, series, todayIso, observations) {
+  canvas.style.width = '100%';
+  const measuredWidth = canvas.parentElement.getBoundingClientRect().width;
+  const fallbackWidth = Math.max(260, window.innerWidth - 52);
+  const parentWidth = Math.max(260, Math.round(measuredWidth || fallbackWidth));
+  const cssHeight = window.innerWidth <= 700 ? 310 : 360;
+  const ratio = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  canvas.style.height = `${cssHeight}px`;
+  canvas.width = Math.round(parentWidth * ratio);
+  canvas.height = Math.round(cssHeight * ratio);
+
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, parentWidth, cssHeight);
+
+  const styles = getComputedStyle(document.documentElement);
+  const brand = styles.getPropertyValue('--brand').trim() || '#8B1E2D';
+  const brandDark = styles.getPropertyValue('--brand-dark').trim() || '#661520';
+  const muted = styles.getPropertyValue('--muted').trim() || '#686868';
+  const line = styles.getPropertyValue('--line').trim() || '#E4E0DE';
+  const success = styles.getPropertyValue('--success').trim() || '#1E6A43';
+  const paper = styles.getPropertyValue('--paper').trim() || '#FFFFFF';
+
+  const margin = { top: 24, right: 42, bottom: 52, left: 58 };
+  const plotWidth = Math.max(1, parentWidth - margin.left - margin.right);
+  const plotHeight = Math.max(1, cssHeight - margin.top - margin.bottom);
+  const maxData = Math.max(...series.map(day => Number(day.rawGdd) || 0));
+  const nextStage = STAGES.find(stage => stage.gdd > maxData);
+  const targetMax = Math.max(maxData, nextStage ? nextStage.gdd : maxData, 50);
+  const yMax = Math.ceil(targetMax / 50) * 50;
+  const xAt = index => margin.left + (series.length === 1 ? 0 : (index / (series.length - 1)) * plotWidth);
+  const yAt = value => margin.top + plotHeight - (Math.max(0, value) / yMax) * plotHeight;
+
+  ctx.fillStyle = paper;
+  ctx.fillRect(0, 0, parentWidth, cssHeight);
+  ctx.font = '12px system-ui, sans-serif';
+  ctx.textBaseline = 'middle';
+
+  // Grille et axe Y.
+  const yTicks = 5;
+  for (let i = 0; i <= yTicks; i += 1) {
+    const value = (yMax / yTicks) * i;
+    const y = yAt(value);
+    ctx.beginPath();
+    ctx.strokeStyle = line;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([]);
+    ctx.moveTo(margin.left, y);
+    ctx.lineTo(margin.left + plotWidth, y);
+    ctx.stroke();
+    ctx.fillStyle = muted;
+    ctx.textAlign = 'right';
+    ctx.fillText(`${Math.round(value)}`, margin.left - 9, y);
+  }
+
+  // Seuils des stades visibles.
+  STAGES.filter(stage => stage.gdd > 0 && stage.gdd <= yMax).forEach(stage => {
+    const y = yAt(stage.gdd);
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(139, 30, 45, 0.20)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 4]);
+    ctx.moveTo(margin.left, y);
+    ctx.lineTo(margin.left + plotWidth, y);
+    ctx.stroke();
+    ctx.fillStyle = brandDark;
+    ctx.textAlign = 'left';
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.fillText(stage.id, margin.left + plotWidth + 6, y);
+  });
+
+  // Axe X et dates.
+  const tickCount = Math.min(6, series.length);
+  ctx.font = '11px system-ui, sans-serif';
+  for (let i = 0; i < tickCount; i += 1) {
+    const index = tickCount === 1 ? 0 : Math.round(i * (series.length - 1) / (tickCount - 1));
+    const x = xAt(index);
+    ctx.beginPath();
+    ctx.strokeStyle = line;
+    ctx.setLineDash([]);
+    ctx.moveTo(x, margin.top + plotHeight);
+    ctx.lineTo(x, margin.top + plotHeight + 5);
+    ctx.stroke();
+    ctx.fillStyle = muted;
+    ctx.textAlign = i === 0 ? 'left' : (i === tickCount - 1 ? 'right' : 'center');
+    ctx.fillText(shortDate(series[index].date), x, margin.top + plotHeight + 23);
+  }
+
+  const todayIndex = series.findIndex(day => day.date === todayIso);
+  if (todayIndex >= 0) {
+    const x = xAt(todayIndex);
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(37, 37, 37, 0.45)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 5]);
+    ctx.moveTo(x, margin.top);
+    ctx.lineTo(x, margin.top + plotHeight);
+    ctx.stroke();
+    ctx.fillStyle = muted;
+    ctx.textAlign = x > parentWidth - 90 ? 'right' : 'left';
+    ctx.fillText('Aujourd’hui', x + (x > parentWidth - 90 ? -5 : 5), margin.top + 9);
+  }
+
+  const firstForecastIndex = series.findIndex(day => day.type === 'forecast');
+  const historicalEnd = firstForecastIndex > 0
+    ? firstForecastIndex
+    : (firstForecastIndex === -1 ? series.length - 1 : -1);
+
+  // Zone légère sous la courbe.
+  ctx.beginPath();
+  series.forEach((day, index) => {
+    const x = xAt(index);
+    const y = yAt(day.rawGdd);
+    if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.lineTo(xAt(series.length - 1), margin.top + plotHeight);
+  ctx.lineTo(xAt(0), margin.top + plotHeight);
+  ctx.closePath();
+  const gradient = ctx.createLinearGradient(0, margin.top, 0, margin.top + plotHeight);
+  gradient.addColorStop(0, 'rgba(139, 30, 45, 0.15)');
+  gradient.addColorStop(1, 'rgba(139, 30, 45, 0.01)');
+  ctx.fillStyle = gradient;
+  ctx.fill();
+
+  // Historique en trait plein.
+  drawSeriesSegment(ctx, series, 0, historicalEnd, xAt, yAt, brand, false);
+
+  // Prévision en pointillés, en repartant du dernier point historique.
+  if (firstForecastIndex >= 0) {
+    drawSeriesSegment(ctx, series, Math.max(0, firstForecastIndex - 1), series.length - 1, xAt, yAt, brand, true);
+  }
+
+  // Observations terrain.
+  observations.forEach(observation => {
+    const index = series.findIndex(day => day.date === observation.date);
+    const stage = STAGES.find(item => item.id === observation.stage);
+    if (index < 0 || !stage) return;
+    const x = xAt(index);
+    const y = yAt(series[index].rawGdd);
+    ctx.beginPath();
+    ctx.fillStyle = success;
+    ctx.strokeStyle = paper;
+    ctx.lineWidth = 3;
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = success;
+    ctx.font = 'bold 10px system-ui, sans-serif';
+    ctx.textAlign = x > parentWidth - 70 ? 'right' : 'left';
+    ctx.fillText(stage.id, x + (x > parentWidth - 70 ? -8 : 8), Math.max(margin.top + 8, y - 9));
+  });
+
+  // Point courant.
+  const currentIndex = [...series].map((day, index) => ({ day, index })).reverse().find(item => item.day.date <= todayIso)?.index;
+  if (Number.isInteger(currentIndex)) {
+    const current = series[currentIndex];
+    const x = xAt(currentIndex);
+    const y = yAt(current.rawGdd);
+    ctx.beginPath();
+    ctx.fillStyle = brandDark;
+    ctx.strokeStyle = paper;
+    ctx.lineWidth = 3;
+    ctx.arc(x, y, 5.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = muted;
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('Cumul (°C·j)', margin.left, 11);
+}
+
+function drawSeriesSegment(ctx, series, startIndex, endIndex, xAt, yAt, color, dashed) {
+  if (endIndex < startIndex) return;
+  ctx.beginPath();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.setLineDash(dashed ? [8, 6] : []);
+  for (let index = startIndex; index <= endIndex; index += 1) {
+    const x = xAt(index);
+    const y = yAt(series[index].rawGdd);
+    if (index === startIndex) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function shortDate(date) {
+  return new Date(`${date}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
 }
 
 function renderAlerts(series, current, currentStage, next, predicted) {
