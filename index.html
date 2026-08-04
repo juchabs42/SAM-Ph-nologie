@@ -7,7 +7,7 @@
   <meta name="description" content="SAM Phénologie — suivi des stades phénologiques du pommier par degrés-jours.">
   <title>SAM Phénologie</title>
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style-v3.css?v=2.1">
 </head>
 <body>
   <header class="app-header">
@@ -16,7 +16,7 @@
       <h1>SAM Phénologie</h1>
       <p>Suivi du pommier par degrés-jours</p>
     </div>
-    <button id="installBtn" class="secondary hidden" type="button">Installer</button>
+    <div class="header-actions"><button id="updateBtn" class="secondary" type="button">Forcer la mise à jour</button><button id="installBtn" class="secondary hidden" type="button">Installer</button></div>
   </header>
 
   <nav class="tabs" aria-label="Navigation principale">
@@ -199,10 +199,10 @@
   </main>
 
   <footer>
-    <strong>SudExpé</strong> · Outil d’aide au suivi, non contractuel. · Version 1.2
+    <strong>SudExpé</strong> · Outil d’aide au suivi, non contractuel. · Version 2.1
   </footer>
 
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="app.js" defer></script>
+  <script src="app-v3.js?v=2.1" defer></script>
 </body>
 </html>

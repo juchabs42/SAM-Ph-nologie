@@ -82,3 +82,8 @@ Dans l’onglet **Historique & courbe** :
 - une date calculée à partir des degrés-jours est marquée **Estimée** ;
 - la courbe distingue l’historique météo de la prévision Open-Meteo sur 16 jours ;
 - les seuils Fleckinger sont indiqués sur l’axe vertical et les observations terrain sont matérialisées par des points.
+
+### Version 2.1
+- arrêt des prévisions phénologiques dès que le dernier stade J est atteint ;
+- arrêt du cumul thermique et de la courbe à la date d’atteinte du stade J ;
+- conservation de la date du dernier stade dans l’historique.
