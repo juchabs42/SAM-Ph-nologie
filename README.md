@@ -83,16 +83,28 @@ Dans l’onglet **Historique & courbe** :
 - la courbe distingue l’historique météo de la prévision Open-Meteo sur 16 jours ;
 - les seuils Fleckinger sont indiqués sur l’axe vertical et les observations terrain sont matérialisées par des points.
 
-### Version 2.2
+### Version 2.3
 - arrêt des prévisions phénologiques dès que le dernier stade J est atteint ;
 - arrêt du cumul thermique et de la courbe à la date d’atteinte du stade J ;
 - la date du dernier stade reste conservée dans l’historique.
 
 
-## Version 2.2
+## Version 2.3
 - suppression du bouton de mise à jour forcée ;
 - configuration Pomme → Exploitation → Parcelle → Variété ;
 - libellés variétaux simplifiés ;
 - localisation par GPS ou saisie manuelle progressive ;
 - altitude récupérée depuis Open-Meteo ;
 - explication de la température de base de 5 °C.
+
+
+## Organisation de la version 2.3
+
+- Culture suivie : pomme uniquement.
+- Station météo commune : Marsillargues, latitude 43,6343, longitude 4,1706, altitude 2 m.
+- La parcelle active est sélectionnée séparément de sa configuration.
+- Quand la parcelle active change, ses paramètres et ses observations sont chargés automatiquement.
+- Variétés disponibles : Gala, Golden Delicious, Cripps Pink / Pink Lady, Joya, Reine des reinettes, Granny Smith, Ariane, Dalinette et Opale.
+- Toutes les variétés utilisent actuellement le modèle générique lorsqu’aucun modèle variétal validé n’est disponible.
+
+Cette version GitHub fonctionne sans serveur et ne peut donc pas imposer de véritables droits utilisateurs. Le verrouillage SudExpé / consultation producteur devra être appliqué lors de l’intégration dans SAM avec authentification.

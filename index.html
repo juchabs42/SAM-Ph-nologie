@@ -7,7 +7,7 @@
   <meta name="description" content="SAM Phénologie — suivi des stades phénologiques du pommier par degrés-jours.">
   <title>SAM Phénologie</title>
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="style-v4.css?v=2.2">
+  <link rel="stylesheet" href="style-v5.css?v=2.3">
 </head>
 <body>
   <header class="app-header">
@@ -26,13 +26,25 @@
 
   <main>
     <div id="dashboardView" class="view">
+    <section class="card active-parcel-card" aria-labelledby="active-parcel-title">
+      <div class="section-heading active-parcel-heading">
+        <div>
+          <p class="eyebrow">Parcelle active</p>
+          <h2 id="active-parcel-title">Parcelle consultée</h2>
+          <p class="hint no-margin">Le suivi, l’historique et la configuration affichés correspondent à cette parcelle.</p>
+        </div>
+        <label class="active-parcel-select">Choisir la parcelle
+          <select id="parcelSelect" aria-label="Choisir la parcelle active"></select>
+        </label>
+      </div>
+    </section>
+
     <section class="card" aria-labelledby="parcel-title">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">Parcelle active</p>
-          <h2 id="parcel-title">Configuration</h2>
+          <p class="eyebrow">Administration SudExpé</p>
+          <h2 id="parcel-title">Configuration de la parcelle</h2>
         </div>
-        <select id="parcelSelect" aria-label="Choisir une parcelle"></select>
       </div>
 
       <div class="config-hierarchy">
@@ -44,7 +56,7 @@
           <input id="farmName" type="text" placeholder="Ex. EARL Dupont">
         </label>
         <label>Nom de la parcelle
-          <input id="parcelName" type="text" placeholder="Ex. Gala Nord">
+          <input id="parcelName" type="text" placeholder="Ex. Verger Nord">
         </label>
         <label>Variété
           <select id="variety">
@@ -52,31 +64,23 @@
             <option value="gala">Gala</option>
             <option value="golden">Golden Delicious</option>
             <option value="pinklady">Cripps Pink / Pink Lady</option>
+            <option value="joya">Joya</option>
+            <option value="reine-reinettes">Reine des reinettes</option>
+            <option value="granny-smith">Granny Smith</option>
+            <option value="ariane">Ariane</option>
+            <option value="dalinette">Dalinette</option>
+            <option value="opale">Opale</option>
             <option value="other">Autre variété</option>
           </select>
+          <small class="field-help">En l’absence de modèle variétal validé, le calcul utilise le modèle générique du pommier.</small>
         </label>
       </div>
 
-      <div class="location-card">
-        <div class="location-summary-row">
-          <div>
-            <span class="config-label">Localisation</span>
-            <strong id="locationSummary">Aucune position enregistrée</strong>
-            <small id="locationStatus" class="location-status"></small>
-          </div>
-          <div class="location-actions">
-            <button id="gpsBtn" class="secondary" type="button">Trouver ma position</button>
-            <button id="manualLocationBtn" class="secondary" type="button">Saisir des coordonnées</button>
-          </div>
-        </div>
-        <div id="manualCoordinates" class="grid two hidden">
-          <label>Latitude
-            <input id="latitude" type="number" step="0.00001" min="41" max="52" placeholder="43.6343">
-          </label>
-          <label>Longitude
-            <input id="longitude" type="number" step="0.00001" min="-6" max="10" placeholder="4.1706">
-          </label>
-        </div>
+      <div class="station-card">
+        <span class="config-label">Station météorologique de référence</span>
+        <strong>Marsillargues</strong>
+        <p>Latitude 43,6343 · longitude 4,1706 · altitude 2 m</p>
+        <small>Les données Open-Meteo sont récupérées automatiquement à cette position pour toutes les parcelles.</small>
       </div>
 
       <div class="grid two">
@@ -218,10 +222,10 @@
   </main>
 
   <footer>
-    <strong>SudExpé</strong> · Outil d’aide au suivi, non contractuel. · Version 2.2
+    <strong>SudExpé</strong> · Outil d’aide au suivi, non contractuel. · Version 2.3
   </footer>
 
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="app-v4.js?v=2.2" defer></script>
+  <script src="app-v5.js?v=2.3" defer></script>
 </body>
 </html>
