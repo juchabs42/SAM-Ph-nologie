@@ -83,7 +83,16 @@ Dans l’onglet **Historique & courbe** :
 - la courbe distingue l’historique météo de la prévision Open-Meteo sur 16 jours ;
 - les seuils Fleckinger sont indiqués sur l’axe vertical et les observations terrain sont matérialisées par des points.
 
-### Version 2.1
+### Version 2.2
 - arrêt des prévisions phénologiques dès que le dernier stade J est atteint ;
 - arrêt du cumul thermique et de la courbe à la date d’atteinte du stade J ;
-- conservation de la date du dernier stade dans l’historique.
+- la date du dernier stade reste conservée dans l’historique.
+
+
+## Version 2.2
+- suppression du bouton de mise à jour forcée ;
+- configuration Pomme → Exploitation → Parcelle → Variété ;
+- libellés variétaux simplifiés ;
+- localisation par GPS ou saisie manuelle progressive ;
+- altitude récupérée depuis Open-Meteo ;
+- explication de la température de base de 5 °C.
