@@ -1,110 +1,59 @@
-# SAM Phénologie
+# SAM Phénologie — Version 2.4
 
-Application web progressive (PWA) de suivi des stades phénologiques du pommier à partir des degrés-jours et des données Open‑Meteo.
+Application web/PWA de suivi des stades phénologiques du pommier par degrés-jours.
 
-## Fonctions
+## Points clés de cette version
 
-- plusieurs parcelles enregistrées localement ;
-- coordonnées saisies ou récupérées par GPS ;
-- historique météo depuis le stade B et prévisions sur 16 jours ;
-- calcul simple des degrés-jours : `max(0, ((Tmin + Tmax) / 2) - Tbase)` ;
-- modèle générique base 5 °C à partir du stade B ;
-- affichage Fleckinger + BBCH ;
-- recalage automatique à chaque observation terrain ;
-- alertes de stade proche et de gel pour les stades sensibles ;
-- fonctionnement hors connexion avec les dernières données enregistrées ;
-- installation possible sur téléphone ;
-- onglet **Historique & courbe** avec la date de passage des stades atteints ;
-- courbe cumulée des degrés-jours, séparation historique/prévision, seuils de stades et observations terrain.
+- identité visuelle SudExpé (logo et couleur du logo) ;
+- intitulé : **Suivi des stades phenologiques du pommier par degrés-jours** ;
+- station météo fixe : **Marsillargues** — Latitude 43,6343 · longitude 4,1706 · altitude 2 m ;
+- onglets **Suivi actuel** et **Historique & courbes** ;
+- encart **Parcelle active** séparé de la configuration ;
+- changement de parcelle active mettant automatiquement à jour toute la configuration ;
+- calcul des degrés-jours démarrant au **stade C** ;
+- import d'un tableau des stades via fichier CSV / TXT / TSV ;
+- historique des stades et courbe cumulée des degrés-jours ;
+- arrêt des prévisions et de la courbe lorsque le dernier stade **J — taille noisette** est atteint.
 
-## Mise en ligne avec GitHub Pages
+## Fichiers à garder dans GitHub
 
-1. Créer un dépôt GitHub.
-2. Déposer tous les fichiers à la racine du dépôt.
-3. Ouvrir **Settings > Pages**.
-4. Dans **Build and deployment**, choisir **Deploy from a branch**.
-5. Sélectionner la branche `main` et le dossier `/ (root)`.
-6. Ouvrir l’adresse fournie par GitHub Pages.
+- `README.md`
+- `index.html`
+- `style-v6.css`
+- `app-v6.js`
+- `manifest.webmanifest`
+- `service-worker.js`
+- `icon.svg`
+- `sudexpe-logo.jpg`
 
-Le GPS et le service worker nécessitent une connexion HTTPS. GitHub Pages fournit HTTPS automatiquement.
+Supprimer les anciens fichiers `app.js`, `app-v3.js`, `app-v4.js`, `app-v5.js`, `style.css`, `style-v3.css`, `style-v4.css`, `style-v5.css` s'ils sont encore présents dans le dépôt.
 
-## Modèle agronomique
+## Import du tableau des stades
 
-La version actuelle utilise un modèle générique de travail, exprimé en degrés-jours base 5 °C à partir du stade B observé. Les seuils sont définis dans `app.js`, constante `STAGES`.
+Format accepté :
 
-Le modèle doit être considéré comme indicatif : la phénologie du pommier dépend de la variété, de la satisfaction des besoins en froid, du site et de l’année. L’application est conçue pour être recalée par les observations terrain.
+```csv
+date;stade
+2026-03-18;C
+2026-03-25;D
+2026-04-10;F
+```
 
-### Seuils utilisés dans cette version
+Ou encore :
 
-| Fleckinger | BBCH | Description | DJ depuis B |
-|---|---:|---|---:|
-| B | 51 | Bourgeon gonflé | 0 |
-| C | 53 | Éclatement des bourgeons | 35 |
-| C3 | 54 | Oreille de souris | 65 |
-| D | 56 | Bouton vert | 105 |
-| E | 57 | Bouton rose | 145 |
-| E2 | 59 | Ballonnets | 180 |
-| F | 61 | Début floraison | 220 |
-| F2 | 65 | Pleine floraison | 260 |
-| G | 67 | Floraison déclinante | 300 |
-| H | 69 | Fin floraison | 340 |
-| I | 71 | Nouaison | 390 |
-| J | 72 | Taille noisette | 520 |
+```csv
+18/03/2026;C
+25/03/2026;D
+10/04/2026;F2
+```
 
-## Sources méthodologiques
+## Remarque agronomique
 
-- Open‑Meteo, documentation des API Forecast et Historical Weather.
-- Meier et al., échelle BBCH des plantes cultivées ; correspondances BBCH/Fleckinger du pommier.
-- Kronenberg, 1983, discussion des températures de base du pommier, avec une valeur moyenne proche de 4,5 °C selon les approches.
-- Travaux de modélisation de la floraison du pommier montrant la dépendance aux besoins en froid, au forçage thermique, au cultivar et au site.
+Cette version utilise un **modèle générique de pommier** en degrés-jours base 5 °C à partir du stade C. Les variétés sont toutes affichées, même lorsqu'aucun modèle variétal spécifique n'est intégré dans cette version.
 
-## Limites
+## Mise à jour GitHub Pages
 
-- Les données Open‑Meteo sont des données maillées, pas une mesure dans la parcelle.
-- L’alerte gel repose sur la température minimale de l’air prévue ; elle ne calcule ni température humide ni température des organes.
-- Aucun seuil universel de degrés-jours ne décrit parfaitement tous les cultivars de pommier en France.
-- Cette application est un outil d’aide au suivi et ne remplace pas l’observation au verger.
-
-
-## Historique des stades
-
-Un onglet dédié affiche la date de passage de chaque stade déjà atteint. Une date saisie sur le terrain est marquée « Observée » ; sinon, la date est calculée à partir du cumul de degrés-jours et marquée « Estimée ».
-
-
-## Mise à jour depuis une ancienne version
-
-La version 1.2 utilise un nouveau cache hors connexion. Après avoir remplacé les fichiers sur GitHub, ouvrir l’application avec une connexion internet puis actualiser la page. Si l’ancienne interface reste visible, effectuer une actualisation forcée (`Ctrl + F5`) ou fermer puis rouvrir l’application installée.
-
-Dans l’onglet **Historique & courbe** :
-
-- le tableau affiche uniquement les stades déjà atteints ;
-- une date issue d’une saisie terrain est marquée **Observée** ;
-- une date calculée à partir des degrés-jours est marquée **Estimée** ;
-- la courbe distingue l’historique météo de la prévision Open-Meteo sur 16 jours ;
-- les seuils Fleckinger sont indiqués sur l’axe vertical et les observations terrain sont matérialisées par des points.
-
-### Version 2.3
-- arrêt des prévisions phénologiques dès que le dernier stade J est atteint ;
-- arrêt du cumul thermique et de la courbe à la date d’atteinte du stade J ;
-- la date du dernier stade reste conservée dans l’historique.
-
-
-## Version 2.3
-- suppression du bouton de mise à jour forcée ;
-- configuration Pomme → Exploitation → Parcelle → Variété ;
-- libellés variétaux simplifiés ;
-- localisation par GPS ou saisie manuelle progressive ;
-- altitude récupérée depuis Open-Meteo ;
-- explication de la température de base de 5 °C.
-
-
-## Organisation de la version 2.3
-
-- Culture suivie : pomme uniquement.
-- Station météo commune : Marsillargues, latitude 43,6343, longitude 4,1706, altitude 2 m.
-- La parcelle active est sélectionnée séparément de sa configuration.
-- Quand la parcelle active change, ses paramètres et ses observations sont chargés automatiquement.
-- Variétés disponibles : Gala, Golden Delicious, Cripps Pink / Pink Lady, Joya, Reine des reinettes, Granny Smith, Ariane, Dalinette et Opale.
-- Toutes les variétés utilisent actuellement le modèle générique lorsqu’aucun modèle variétal validé n’est disponible.
-
-Cette version GitHub fonctionne sans serveur et ne peut donc pas imposer de véritables droits utilisateurs. Le verrouillage SudExpé / consultation producteur devra être appliqué lors de l’intégration dans SAM avec authentification.
+1. Décompresser le ZIP.
+2. Envoyer tous les fichiers à la racine du dépôt GitHub.
+3. Vérifier que `index.html` charge bien `style-v6.css` et `app-v6.js`.
+4. Recharger le site avec `Ctrl + F5`.
