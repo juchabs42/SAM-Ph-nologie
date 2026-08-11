@@ -1,92 +1,146 @@
-# SAM Phénologie — Version 2.5
+# SAM Phénologie — version 2.6
 
 Application web/PWA SudExpé de suivi des stades phénologiques du pommier par degrés-jours.
 
-## Modèles intégrés
+## Nouveautés 2.6
 
-### Gala
+- choix de la localisation météo par **nom de commune ou code postal** via l'API de géocodage Open-Meteo ;
+- aucune saisie manuelle de latitude/longitude nécessaire ;
+- la localisation météo est enregistrée **par parcelle** ;
+- encart **Parcelle active** organisé en deux niveaux : **Exploitation → Parcelle** ;
+- correction de la variété **Opal** ;
+- infobulle interactive sur la courbe cumulée : date, degrés-jours et stade phénologique ;
+- préparation complète d'une base **Supabase** pour conserver les parcelles et les observations ;
+- consultation publique en lecture seule lorsque Supabase est configuré ;
+- modifications réservées aux comptes Supabase authentifiés utilisés par SudExpé ;
+- pied de page simplifié : `SudExpé · Outil d’aide au suivi`.
 
-- modèle variétal WSU ;
-- température de base : **6,1 °C (43 °F)** ;
-- seuils publiés pour les stades allant de Green Tip à Petal Fall ;
-- seuils normalisés dans l'application à **0 DJ au stade Fleckinger C**.
+## Fichiers GitHub
 
-| Stade de l'application | Seuil depuis C (DJ base 6,1 °C) | Construction |
-|---|---:|---|
-| C | 0,00 | Green Tip, point de départ |
-| C3 | 22,84 | ½ inch green |
-| D | 75,76 | Tight cluster |
-| E | 112,82 | First pink |
-| E2 | 147,16 | Full pink |
-| F | 185,48 | First bloom |
-| F2 | 207,72 | Full bloom |
-| G | 234,97 | interpolation entre pleine floraison et chute des pétales |
-| H | 262,22 | Petal fall |
-| I | 312,22 | prolongation générique : H + 50 DJ |
-| J | 382,22 | prolongation générique : H + 120 DJ |
+Conserver à la racine du dépôt :
 
-### Cripps Pink / Pink Lady
-
-- modèle variétal WSU ;
-- température de base : **6,1 °C (43 °F)** ;
-- seuils normalisés à **0 DJ au stade Fleckinger C**.
-
-| Stade de l'application | Seuil depuis C (DJ base 6,1 °C) | Construction |
-|---|---:|---|
-| C | 0,00 | Green Tip, point de départ |
-| C3 | 13,72 | ½ inch green |
-| D | 55,26 | Tight cluster |
-| E | 82,40 | First pink |
-| E2 | 113,45 | Full pink |
-| F | 152,61 | First bloom |
-| F2 | 181,91 | Full bloom |
-| G | 204,91 | interpolation entre pleine floraison et chute des pétales |
-| H | 227,90 | Petal fall |
-| I | 277,90 | prolongation générique : H + 50 DJ |
-| J | 347,90 | prolongation générique : H + 120 DJ |
-
-### Autres variétés
-
-Golden Delicious, Joya, Reine des reinettes, Granny Smith, Ariane, Dalinette, Opale et « Autre variété » restent calculées avec le **modèle générique du pommier, base 5 °C**.
-
-Des publications décrivent des besoins en froid et en chaleur jusqu'à la floraison pour plusieurs cultivars, mais elles ne fournissent pas nécessairement une série de seuils directement compatible avec tous les stades Fleckinger C à J. L'application n'invente donc pas de seuils variétaux pour ces variétés.
-
-## Références principales
-
-- Hoogenboom G., Salazar M. et collaborateurs. *Development of apple bloom phenology and fruit growth models*. Washington Tree Fruit Research Commission / Washington State University, final project report, 2015. Table 2 : seuils de début et de fin des huit stades pour Gala, Cripps Pink et Red Delicious.
-- Chaves B. et al. *Modeling apple bloom phenology*. Acta Horticulturae 1160, 2017.
-
-Rapport WSU :
-https://treefruitresearch.org/wp-content/uploads/2019/11/Report-723.-Hoogenboom_Final_Report_Apple_2015.pdf
-
-Article Acta Horticulturae :
-https://www.actahort.org/books/1160/1160_29.htm
-
-## Limites à retenir
-
-- Le modèle WSU a été établi dans l'État de Washington, sur plusieurs sites et années. Il doit être contrôlé et recalé avec les observations de Marsillargues.
-- La correspondance entre la nomenclature WSU et Fleckinger est une adaptation opérationnelle.
-- Le stade G est interpolé, car le modèle publié passe directement de Full Bloom à Petal Fall.
-- Les seuils I et J ne sont pas publiés dans ce modèle de floraison et sont prolongés avec les incréments du modèle générique.
-- Une observation terrain saisie dans l'application reste prioritaire et recale la courbe.
-
-## Fichiers à garder dans GitHub
-
-- `README.md`
 - `index.html`
-- `style-v7.css`
-- `app-v7.js`
+- `app-v8.js`
+- `style-v8.css`
 - `manifest.webmanifest`
 - `service-worker.js`
 - `icon.svg`
 - `sudexpe-logo.jpg`
+- `supabase-config.js`
+- `supabase-schema.sql`
+- `README.md`
 
-Supprimer les anciennes versions `app-v6.js`, `style-v6.css` et tous les fichiers plus anciens.
+Les anciens fichiers `app-v7.js`, `style-v7.css`, etc. peuvent être supprimés.
 
-## Mise à jour GitHub Pages
+## Choix de la localisation météo
 
-1. Décompresser le ZIP.
-2. Envoyer tous les fichiers à la racine du dépôt GitHub.
-3. Supprimer les anciens fichiers JavaScript et CSS.
-4. Vérifier que `index.html` charge `style-v7.css` et `app-v7.js`.
-5. Recharger le site avec `Ctrl + F5`.
+Dans la configuration d'une parcelle :
+
+1. saisir une commune ou un code postal ;
+2. cliquer sur **Rechercher** ;
+3. choisir le lieu dans la liste proposée ;
+4. enregistrer la parcelle.
+
+Le résultat Open-Meteo fournit automatiquement le nom, la latitude, la longitude, l'altitude et le fuseau horaire nécessaires aux requêtes météo.
+
+La localisation par défaut des anciennes parcelles reste Marsillargues :
+
+`Latitude 43,6343 · longitude 4,1706 · altitude 2 m`.
+
+## Supabase — mise en place
+
+### 1. Créer le projet
+
+Créer un projet Supabase, puis ouvrir **SQL Editor**.
+
+### 2. Créer les tables et les droits
+
+Copier tout le contenu du fichier :
+
+`supabase-schema.sql`
+
+et l'exécuter dans SQL Editor.
+
+Deux tables sont créées :
+
+- `parcels` : exploitation, parcelle, variété, date du stade C, modèle thermique et localisation météo ;
+- `observations` : historique des observations phénologiques.
+
+Les politiques RLS fournies dans le fichier donnent :
+
+- lecture aux visiteurs non connectés ;
+- ajout/modification/suppression uniquement aux utilisateurs Supabase authentifiés.
+
+N'ajouter comme utilisateurs authentifiés que les personnes SudExpé autorisées à modifier les données.
+
+### 3. Récupérer l'URL et la clé publique
+
+Dans Supabase, récupérer :
+
+- l'URL du projet ;
+- la **Publishable key** (ou l'ancienne `anon key`).
+
+Ne jamais mettre une `secret key` ou une `service_role key` dans GitHub.
+
+### 4. Modifier `supabase-config.js`
+
+Remplacer :
+
+```js
+window.SAM_SUPABASE = {
+  url: 'VOTRE_SUPABASE_URL',
+  publishableKey: 'VOTRE_SUPABASE_PUBLISHABLE_KEY'
+};
+```
+
+par les deux valeurs de votre projet.
+
+### 5. Créer le compte SudExpé
+
+Dans Supabase > Authentication > Users, créer les comptes des personnes SudExpé qui auront le droit d'écrire.
+
+Une fois Supabase configuré :
+
+- un producteur non connecté peut consulter les données ;
+- les champs et boutons de modification sont verrouillés ;
+- le bouton **Connexion SudExpé** permet à une personne autorisée de passer en mode édition.
+
+### 6. Premier envoi des données locales
+
+Après connexion SudExpé, ouvrir le panneau de connexion puis cliquer sur :
+
+**Envoyer les données locales vers Supabase**
+
+Cela transfère les parcelles et les observations déjà présentes dans le navigateur.
+
+## Courbe interactive
+
+Dans **Historique & courbes**, déplacer la souris sur la courbe. Une infobulle affiche :
+
+- la date ;
+- le cumul de degrés-jours ;
+- le stade phénologique correspondant ;
+- l'observation terrain lorsqu'une observation existe exactement à cette date.
+
+## Modèles thermiques
+
+La version 2.6 conserve les modèles de la version 2.5 :
+
+- Gala : modèle variétal WSU intégré ;
+- Cripps Pink / Pink Lady : modèle variétal WSU intégré ;
+- Golden Delicious, Joya, Reine des reinettes, Granny Smith, Ariane, Dalinette, **Opal** et Autre variété : modèle générique du pommier.
+
+Le point de départ est le stade Fleckinger **C**.
+
+## GitHub Pages
+
+Après envoi des fichiers :
+
+1. vérifier que `index.html`, `app-v8.js` et `style-v8.css` sont à la racine ;
+2. Settings > Pages ;
+3. `Deploy from a branch` ;
+4. branche `main` ;
+5. dossier `/ (root)` ;
+6. enregistrer.
+
+Le service worker 2.6 utilise une nouvelle version de cache et privilégie le réseau pour `index.html`, afin de réduire les problèmes d'ancienne version lors des mises à jour.

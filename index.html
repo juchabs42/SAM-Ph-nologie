@@ -7,7 +7,7 @@
   <meta name="description" content="SAM Phénologie — suivi des stades phénologiques du pommier par degrés-jours.">
   <title>SAM Phénologie</title>
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="style-v7.css?v=2.5">
+  <link rel="stylesheet" href="style-v8.css?v=2.6">
 </head>
 <body>
   <header class="app-header">
@@ -19,6 +19,7 @@
       </div>
     </div>
     <div class="header-actions">
+      <button id="authBtn" class="secondary hidden" type="button">Connexion SudExpé</button>
       <button id="installBtn" class="secondary hidden" type="button">Installer</button>
     </div>
   </header>
@@ -28,16 +29,47 @@
       <div class="section-heading">
         <div>
           <p class="eyebrow">Parcelle active</p>
-          <h2 id="active-title">Choix de la parcelle</h2>
+          <h2 id="active-title">Choix de l’exploitation et de la parcelle</h2>
         </div>
-        <select id="parcelSelect" aria-label="Choisir une parcelle"></select>
+        <span id="dataModeBadge" class="mode-badge">Mode local</span>
+      </div>
+      <div class="active-selectors">
+        <label>Exploitation
+          <select id="exploitationSelect" aria-label="Choisir une exploitation"></select>
+        </label>
+        <label>Parcelle
+          <select id="parcelSelect" aria-label="Choisir une parcelle"></select>
+        </label>
       </div>
       <div class="active-summary" id="activeParcelSummary">
-        <div><span>Exploitation</span><strong id="activeExploit">—</strong></div>
-        <div><span>Parcelle</span><strong id="activeParcelName">—</strong></div>
         <div><span>Variété</span><strong id="activeVariety">—</strong></div>
+        <div><span>Localisation météo</span><strong id="activeWeatherLocation">—</strong></div>
         <div><span>Point de départ</span><strong id="activeStart">—</strong></div>
       </div>
+    </section>
+
+    <section id="authPanel" class="card hidden" aria-labelledby="auth-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Accès SudExpé</p>
+          <h2 id="auth-title">Connexion pour modifier les données</h2>
+        </div>
+        <button id="closeAuthBtn" class="secondary" type="button">Fermer</button>
+      </div>
+      <div class="grid two">
+        <label>Adresse e-mail
+          <input id="authEmail" type="email" autocomplete="username" placeholder="prenom.nom@sudexpe.net">
+        </label>
+        <label>Mot de passe
+          <input id="authPassword" type="password" autocomplete="current-password">
+        </label>
+      </div>
+      <div class="actions">
+        <button id="loginBtn" type="button">Se connecter</button>
+        <button id="logoutBtn" class="secondary hidden" type="button">Se déconnecter</button>
+        <button id="syncLocalBtn" class="secondary hidden" type="button">Envoyer les données locales vers Supabase</button>
+      </div>
+      <p id="authStatus" class="hint">Supabase n’est pas encore configuré.</p>
     </section>
 
     <nav class="tabs" aria-label="Navigation principale">
@@ -52,6 +84,7 @@
             <p class="eyebrow">Configuration</p>
             <h2 id="config-title">Paramètres de la parcelle</h2>
           </div>
+          <span id="editStatus" class="mode-badge hidden">Lecture seule</span>
         </div>
 
         <div class="grid two">
@@ -59,19 +92,19 @@
             <input type="text" value="Pomme" disabled>
           </label>
           <label>Exploitation
-            <input id="exploitation" type="text" placeholder="Ex. SudExpé Marsillargues">
+            <input id="exploitation" data-editable type="text" placeholder="Ex. SudExpé Marsillargues">
           </label>
         </div>
 
         <div class="grid two">
           <label>Parcelle
-            <input id="parcelName" type="text" placeholder="Ex. Verger Nord">
+            <input id="parcelName" data-editable type="text" placeholder="Ex. Verger Nord">
           </label>
           <label>
             <span class="label-with-info">Variété
               <button type="button" class="info-btn" data-info="varietyInfo" aria-label="Information sur la variété">i</button>
             </span>
-            <select id="variety"></select>
+            <select id="variety" data-editable></select>
           </label>
         </div>
         <div id="varietyInfo" class="info-box hidden"><span id="varietyInfoText">En l’absence de modèle variétal validé, le calcul utilise le modèle générique du pommier.</span></div>
@@ -86,17 +119,21 @@
         </div>
 
         <div class="grid station-grid">
-          <div class="readonly-box">
-            <span class="readonly-label">Station météo de référence</span>
-            <strong>Marsillargues</strong>
-            <p>Latitude 43,6343 · longitude 4,1706 · altitude 2 m</p>
-            <small>Les données météo sont récupérées automatiquement depuis Open-Meteo pour cette station de référence.</small>
+          <div class="location-picker">
+            <span class="readonly-label">Localisation météo</span>
+            <div class="location-search-row">
+              <input id="locationSearch" data-editable type="search" placeholder="Commune ou code postal, ex. Marsillargues">
+              <button id="searchLocationBtn" data-editable class="secondary" type="button">Rechercher</button>
+            </div>
+            <select id="locationResults" data-editable class="hidden" aria-label="Résultats de localisation"></select>
+            <div id="selectedLocation" class="selected-location">—</div>
+            <small>La recherche utilise la liste de lieux Open-Meteo. Il n’est pas nécessaire de saisir latitude et longitude.</small>
           </div>
           <label>
             <span class="label-with-info">Température de base
               <button type="button" class="info-btn" data-info="baseTempInfo" aria-label="Information sur la température de base">i</button>
             </span>
-            <div class="input-suffix"><input id="baseTemp" type="number" value="5" step="0.1"><span>°C</span></div>
+            <div class="input-suffix"><input id="baseTemp" data-editable type="number" value="5" step="0.1"><span>°C</span></div>
           </label>
         </div>
         <div id="baseTempInfo" class="info-box hidden"><span id="baseTempInfoText">La température de base est le seuil sous lequel le développement du pommier est considéré comme très faible. La valeur de 5 °C est utilisée pour calculer simplement l’accumulation de chaleur depuis le stade C.</span></div>
@@ -104,17 +141,17 @@
 
         <div class="grid two">
           <label>Date du stade C observé
-            <input id="stageCDate" type="date">
+            <input id="stageCDate" data-editable type="date">
           </label>
           <label>Dernière mise à jour météo
             <input id="weatherLastUpdate" type="text" disabled value="Aucune donnée chargée">
           </label>
         </div>
 
-        <div class="actions">
-          <button id="saveParcelBtn" type="button">Enregistrer la parcelle</button>
-          <button id="newParcelBtn" class="secondary" type="button">Nouvelle parcelle</button>
-          <button id="deleteParcelBtn" class="danger" type="button">Supprimer</button>
+        <div class="actions admin-actions">
+          <button id="saveParcelBtn" data-editable type="button">Enregistrer la parcelle</button>
+          <button id="newParcelBtn" data-editable class="secondary" type="button">Nouvelle parcelle</button>
+          <button id="deleteParcelBtn" data-editable class="danger" type="button">Supprimer</button>
         </div>
       </section>
 
@@ -139,19 +176,19 @@
         <div class="section-heading">
           <div>
             <p class="eyebrow">Terrain</p>
-            <h2 id="observation-title">Ajouter une observation</h2>
+            <h2 id="observation-title">Observations</h2>
           </div>
-          <button id="importStagesBtn" class="secondary" type="button">Importer le tableau des stades</button>
+          <button id="importStagesBtn" data-editable class="secondary" type="button">Importer le tableau des stades</button>
         </div>
         <input id="importStagesInput" type="file" accept=".csv,.txt,.tsv" class="hidden">
-        <div class="grid observation-grid">
+        <div class="grid observation-grid admin-entry">
           <label>Date
-            <input id="observationDate" type="date">
+            <input id="observationDate" data-editable type="date">
           </label>
           <label>Stade observé
-            <select id="observationStage"></select>
+            <select id="observationStage" data-editable></select>
           </label>
-          <button id="addObservationBtn" class="align-end" type="button">Ajouter</button>
+          <button id="addObservationBtn" data-editable class="align-end" type="button">Ajouter</button>
         </div>
         <p class="hint">Une observation terrain recale automatiquement l’estimation sur le cumul thermique réel de la parcelle.</p>
         <div id="observationsList" class="observations"></div>
@@ -182,7 +219,7 @@
             <p class="eyebrow">Chronologie</p>
             <h2 id="stage-history-title">Dates de passage des stades</h2>
           </div>
-          <button id="importStagesBtnTop" class="secondary" type="button">Importer le tableau des stades</button>
+          <button id="importStagesBtnTop" data-editable class="secondary" type="button">Importer le tableau des stades</button>
         </div>
         <p class="hint">Les dates observées sont prioritaires. Les autres dates sont estimées à partir du cumul de degrés-jours recalé.</p>
         <div id="stageHistoryStatus" class="loading-state">Aucune donnée chargée.</div>
@@ -211,17 +248,21 @@
           <span><i class="legend-line forecast-line"></i>Prévision Open-Meteo</span>
           <span><i class="legend-dot"></i>Observation terrain</span>
         </div>
+        <p class="hint">Passez la souris sur la courbe pour afficher la date, le cumul et le stade phénologique estimé.</p>
         <div id="gddChartStatus" class="loading-state">Aucune donnée chargée.</div>
-        <div class="chart-wrap"><canvas id="gddChart" role="img" aria-label="Courbe du cumul des degrés-jours avec seuils des stades phénologiques"></canvas></div>
+        <div id="chartWrap" class="chart-wrap">
+          <canvas id="gddChart" role="img" aria-label="Courbe du cumul des degrés-jours avec seuils des stades phénologiques"></canvas>
+          <div id="chartTooltip" class="chart-tooltip hidden" role="status"></div>
+        </div>
       </section>
     </div>
   </main>
 
-  <footer>
-    <strong>SudExpé</strong> · Outil d’aide au suivi, non contractuel. · Version 2.5
-  </footer>
+  <footer><strong>SudExpé</strong> · Outil d’aide au suivi</footer>
 
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="app-v7.js?v=2.5" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
+  <script src="app-v8.js?v=2.6" defer></script>
 </body>
 </html>
