@@ -7,7 +7,7 @@
   <meta name="description" content="SAM Phénologie — suivi des stades phénologiques du pommier par degrés-jours.">
   <title>SAM Phénologie</title>
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="style-v9.css?v=2.7">
+  <link rel="stylesheet" href="style.css?v=2.8">
 </head>
 <body>
   <header class="app-header">
@@ -19,7 +19,7 @@
       </div>
     </div>
     <div class="header-actions">
-      <button id="authBtn" class="secondary" type="button">Connexion SudExpé</button>
+      <button id="authBtn" class="secondary" type="button">Connexion</button>
       <button id="installBtn" class="secondary hidden" type="button">Installer</button>
     </div>
   </header>
@@ -53,14 +53,14 @@
     <section id="authPanel" class="card hidden" aria-labelledby="auth-title">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">Accès SudExpé</p>
+          <p class="eyebrow">Accès</p>
           <h2 id="auth-title">Connexion par lien reçu par e-mail</h2>
         </div>
         <button id="closeAuthBtn" class="secondary" type="button">Fermer</button>
       </div>
       <p id="authStatus" class="hint">Renseignez votre adresse e-mail SudExpé.</p>
       <div class="grid two admin-entry">
-        <label>Adresse e-mail SudExpé
+        <label>Adresse mail
           <input id="authEmail" type="email" autocomplete="email" placeholder="prenom.nom@sudexpe.net">
         </label>
         <div class="align-end">
@@ -72,7 +72,6 @@
       </div>
       <div class="actions admin-actions">
         <button id="logoutBtn" class="secondary hidden" type="button">Se déconnecter</button>
-        <button id="syncLocalBtn" class="secondary hidden" type="button">Envoyer les données locales vers Supabase</button>
       </div>
     </section>
 
@@ -267,6 +266,6 @@
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="supabase-config.js?v=2.7"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="app-v9.js?v=2.7" defer></script>
+  <script src="app.js?v=2.8" defer></script>
 </body>
 </html>

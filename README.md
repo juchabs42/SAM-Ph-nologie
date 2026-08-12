@@ -20,8 +20,8 @@ Application web/PWA SudExpé de suivi des stades phénologiques du pommier par d
 
 - `README.md`
 - `index.html`
-- `app-v9.js`
-- `style-v9.css`
+- `app.js`
+- `style.css`
 - `manifest.webmanifest`
 - `service-worker.js`
 - `icon.svg`
@@ -100,7 +100,7 @@ window.SAM_SUPABASE = {
 
 Une fois les fichiers publiés sur GitHub Pages :
 
-1. cliquer sur **Connexion SudExpé** ;
+1. cliquer sur **Connexion** ;
 2. saisir l'adresse e-mail déjà présente dans Supabase ;
 3. cliquer sur **Recevoir le lien de connexion** ;
 4. ouvrir l'e-mail reçu ;
@@ -115,8 +115,8 @@ Aucun mot de passe n'est demandé.
 Si des parcelles existent déjà uniquement dans le stockage local du navigateur :
 
 1. se connecter comme SudExpé ;
-2. ouvrir **Connexion SudExpé / Compte SudExpé** ;
-3. cliquer sur **Envoyer les données locales vers Supabase**.
+2. ouvrir **Connexion / Compte** ;
+3. cliquer sur ****.
 
 Vérifier ensuite dans Supabase > Table Editor que les tables `parcels` et `observations` contiennent les données.
 

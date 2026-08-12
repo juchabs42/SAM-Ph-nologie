@@ -1,9 +1,9 @@
-const CACHE = 'sam-phenologie-shell-v2.7';
+const CACHE = 'sam-phenologie-shell-v2.8';
 const ASSETS = [
   './',
   './index.html',
-  './style-v9.css',
-  './app-v9.js',
+  './style.css',
+  './app.js',
   './supabase-config.js',
   './manifest.webmanifest',
   './icon.svg',
