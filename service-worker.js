@@ -1,9 +1,9 @@
-const CACHE = 'sam-phenologie-shell-v2.6';
+const CACHE = 'sam-phenologie-shell-v2.7';
 const ASSETS = [
   './',
   './index.html',
-  './style-v8.css',
-  './app-v8.js',
+  './style-v9.css',
+  './app-v9.js',
   './supabase-config.js',
   './manifest.webmanifest',
   './icon.svg',
@@ -15,7 +15,11 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('activate', event => {
-  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())));
+  event.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))
+      .then(() => self.clients.claim())
+  );
 });
 
 self.addEventListener('fetch', event => {

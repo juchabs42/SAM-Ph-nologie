@@ -7,7 +7,7 @@
   <meta name="description" content="SAM Phénologie — suivi des stades phénologiques du pommier par degrés-jours.">
   <title>SAM Phénologie</title>
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="style-v8.css?v=2.6">
+  <link rel="stylesheet" href="style-v9.css?v=2.7">
 </head>
 <body>
   <header class="app-header">
@@ -19,7 +19,7 @@
       </div>
     </div>
     <div class="header-actions">
-      <button id="authBtn" class="secondary hidden" type="button">Connexion SudExpé</button>
+      <button id="authBtn" class="secondary" type="button">Connexion SudExpé</button>
       <button id="installBtn" class="secondary hidden" type="button">Installer</button>
     </div>
   </header>
@@ -33,6 +33,7 @@
         </div>
         <span id="dataModeBadge" class="mode-badge">Mode local</span>
       </div>
+
       <div class="active-selectors">
         <label>Exploitation
           <select id="exploitationSelect" aria-label="Choisir une exploitation"></select>
@@ -41,7 +42,8 @@
           <select id="parcelSelect" aria-label="Choisir une parcelle"></select>
         </label>
       </div>
-      <div class="active-summary" id="activeParcelSummary">
+
+      <div class="active-summary">
         <div><span>Variété</span><strong id="activeVariety">—</strong></div>
         <div><span>Localisation météo</span><strong id="activeWeatherLocation">—</strong></div>
         <div><span>Point de départ</span><strong id="activeStart">—</strong></div>
@@ -52,24 +54,26 @@
       <div class="section-heading">
         <div>
           <p class="eyebrow">Accès SudExpé</p>
-          <h2 id="auth-title">Connexion pour modifier les données</h2>
+          <h2 id="auth-title">Connexion par lien reçu par e-mail</h2>
         </div>
         <button id="closeAuthBtn" class="secondary" type="button">Fermer</button>
       </div>
-      <div class="grid two">
-        <label>Adresse e-mail
-          <input id="authEmail" type="email" autocomplete="username" placeholder="prenom.nom@sudexpe.net">
+      <p id="authStatus" class="hint">Renseignez votre adresse e-mail SudExpé.</p>
+      <div class="grid two admin-entry">
+        <label>Adresse e-mail SudExpé
+          <input id="authEmail" type="email" autocomplete="email" placeholder="prenom.nom@sudexpe.net">
         </label>
-        <label>Mot de passe
-          <input id="authPassword" type="password" autocomplete="current-password">
-        </label>
+        <div class="align-end">
+          <button id="loginBtn" type="button">Recevoir le lien de connexion</button>
+        </div>
       </div>
-      <div class="actions">
-        <button id="loginBtn" type="button">Se connecter</button>
+      <div id="magicLinkHelp" class="info-box hidden">
+        Le lien est valable pour une adresse déjà présente dans les utilisateurs Supabase. Cliquez sur le lien reçu : vous reviendrez automatiquement dans SAM Phénologie connecté, sans mot de passe.
+      </div>
+      <div class="actions admin-actions">
         <button id="logoutBtn" class="secondary hidden" type="button">Se déconnecter</button>
         <button id="syncLocalBtn" class="secondary hidden" type="button">Envoyer les données locales vers Supabase</button>
       </div>
-      <p id="authStatus" class="hint">Supabase n’est pas encore configuré.</p>
     </section>
 
     <nav class="tabs" aria-label="Navigation principale">
@@ -125,10 +129,11 @@
               <input id="locationSearch" data-editable type="search" placeholder="Commune ou code postal, ex. Marsillargues">
               <button id="searchLocationBtn" data-editable class="secondary" type="button">Rechercher</button>
             </div>
-            <select id="locationResults" data-editable class="hidden" aria-label="Résultats de localisation"></select>
+            <select id="locationResults" data-editable class="hidden" aria-label="Résultats de recherche de localisation"></select>
             <div id="selectedLocation" class="selected-location">—</div>
-            <small>La recherche utilise la liste de lieux Open-Meteo. Il n’est pas nécessaire de saisir latitude et longitude.</small>
+            <small>Saisissez le nom d’une commune ou un code postal. Les coordonnées nécessaires à Open-Meteo sont récupérées automatiquement.</small>
           </div>
+
           <label>
             <span class="label-with-info">Température de base
               <button type="button" class="info-btn" data-info="baseTempInfo" aria-label="Information sur la température de base">i</button>
@@ -158,7 +163,7 @@
       <section id="statusCard" class="hero-card" aria-live="polite">
         <p class="eyebrow">Stade estimé aujourd’hui</p>
         <h2 id="stageMain">—</h2>
-        <p id="stageBbch" class="bbch">Renseignez une parcelle</p>
+        <p id="stageBbch" class="bbch">Chargement</p>
         <div class="hero-stats">
           <div><span>Cumul depuis C</span><strong id="gddTotal">—</strong></div>
           <div><span>Prochain stade</span><strong id="nextStage">—</strong></div>
@@ -176,11 +181,11 @@
         <div class="section-heading">
           <div>
             <p class="eyebrow">Terrain</p>
-            <h2 id="observation-title">Observations</h2>
+            <h2 id="observation-title">Ajouter une observation</h2>
           </div>
           <button id="importStagesBtn" data-editable class="secondary" type="button">Importer le tableau des stades</button>
         </div>
-        <input id="importStagesInput" type="file" accept=".csv,.txt,.tsv" class="hidden">
+        <input id="importStagesInput" data-editable type="file" accept=".csv,.txt,.tsv" class="hidden">
         <div class="grid observation-grid admin-entry">
           <label>Date
             <input id="observationDate" data-editable type="date">
@@ -248,11 +253,10 @@
           <span><i class="legend-line forecast-line"></i>Prévision Open-Meteo</span>
           <span><i class="legend-dot"></i>Observation terrain</span>
         </div>
-        <p class="hint">Passez la souris sur la courbe pour afficher la date, le cumul et le stade phénologique estimé.</p>
         <div id="gddChartStatus" class="loading-state">Aucune donnée chargée.</div>
         <div id="chartWrap" class="chart-wrap">
           <canvas id="gddChart" role="img" aria-label="Courbe du cumul des degrés-jours avec seuils des stades phénologiques"></canvas>
-          <div id="chartTooltip" class="chart-tooltip hidden" role="status"></div>
+          <div id="chartTooltip" class="chart-tooltip hidden"></div>
         </div>
       </section>
     </div>
@@ -261,8 +265,8 @@
   <footer><strong>SudExpé</strong> · Outil d’aide au suivi</footer>
 
   <div id="toast" role="status" aria-live="polite"></div>
+  <script src="supabase-config.js?v=2.7"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="supabase-config.js"></script>
-  <script src="app-v8.js?v=2.6" defer></script>
+  <script src="app-v9.js?v=2.7" defer></script>
 </body>
 </html>

@@ -1,88 +1,82 @@
-# SAM Phénologie — version 2.6
+# SAM Phénologie — v2.7
 
 Application web/PWA SudExpé de suivi des stades phénologiques du pommier par degrés-jours.
 
-## Nouveautés 2.6
+## Nouveau dans la v2.7
 
-- choix de la localisation météo par **nom de commune ou code postal** via l'API de géocodage Open-Meteo ;
-- aucune saisie manuelle de latitude/longitude nécessaire ;
-- la localisation météo est enregistrée **par parcelle** ;
-- encart **Parcelle active** organisé en deux niveaux : **Exploitation → Parcelle** ;
-- correction de la variété **Opal** ;
-- infobulle interactive sur la courbe cumulée : date, degrés-jours et stade phénologique ;
-- préparation complète d'une base **Supabase** pour conserver les parcelles et les observations ;
-- consultation publique en lecture seule lorsque Supabase est configuré ;
-- modifications réservées aux comptes Supabase authentifiés utilisés par SudExpé ;
-- pied de page simplifié : `SudExpé · Outil d’aide au suivi`.
+- vraie connexion **SudExpé par Magic Link** Supabase ;
+- aucun mot de passe à créer ou à saisir ;
+- l'adresse e-mail doit déjà exister dans `Authentication > Users` ;
+- `shouldCreateUser: false` empêche SAM Phénologie de créer automatiquement de nouveaux utilisateurs ;
+- après configuration de Supabase, les producteurs non connectés sont en **lecture seule** ;
+- les comptes SudExpé connectés peuvent créer/modifier les parcelles et observations ;
+- choix successif **Exploitation → Parcelle** dans l'encart Parcelle active ;
+- choix de la localisation météo par **nom de commune ou code postal**, sans saisie manuelle de latitude/longitude ;
+- infobulle interactive sur la courbe cumulée des degrés-jours : date, cumul et stade phénologique ;
+- variété **Opal** corrigée ;
+- pied de page : `SudExpé · Outil d’aide au suivi`.
 
-## Fichiers GitHub
+## Fichiers à conserver dans GitHub
 
-Conserver à la racine du dépôt :
-
+- `README.md`
 - `index.html`
-- `app-v8.js`
-- `style-v8.css`
+- `app-v9.js`
+- `style-v9.css`
 - `manifest.webmanifest`
 - `service-worker.js`
 - `icon.svg`
 - `sudexpe-logo.jpg`
 - `supabase-config.js`
 - `supabase-schema.sql`
-- `README.md`
 
-Les anciens fichiers `app-v7.js`, `style-v7.css`, etc. peuvent être supprimés.
+Supprimer les anciens fichiers `app-v8.js`, `style-v8.css` et les versions plus anciennes.
 
-## Choix de la localisation météo
+## 1. Préparer Supabase
 
-Dans la configuration d'une parcelle :
+Dans Supabase > SQL Editor, exécuter le contenu de `supabase-schema.sql`.
 
-1. saisir une commune ou un code postal ;
-2. cliquer sur **Rechercher** ;
-3. choisir le lieu dans la liste proposée ;
-4. enregistrer la parcelle.
+Le script crée :
 
-Le résultat Open-Meteo fournit automatiquement le nom, la latitude, la longitude, l'altitude et le fuseau horaire nécessaires aux requêtes météo.
+- `public.parcels`
+- `public.observations`
 
-La localisation par défaut des anciennes parcelles reste Marsillargues :
+avec lecture publique et écriture réservée aux utilisateurs authentifiés.
 
-`Latitude 43,6343 · longitude 4,1706 · altitude 2 m`.
+## 2. Utilisateur SudExpé
 
-## Supabase — mise en place
+L'utilisateur SudExpé doit déjà être visible dans :
 
-### 1. Créer le projet
+`Authentication > Users`
 
-Créer un projet Supabase, puis ouvrir **SQL Editor**.
+Il n'a pas besoin d'avoir un mot de passe pour SAM Phénologie. La connexion se fera par Magic Link.
 
-### 2. Créer les tables et les droits
+Pour éviter qu'un visiteur puisse créer son propre compte :
 
-Copier tout le contenu du fichier :
+- désactiver les inscriptions libres dans la configuration Auth du projet ;
+- SAM utilise en plus `shouldCreateUser: false` lors de la demande de Magic Link.
 
-`supabase-schema.sql`
+## 3. Configurer l'URL de redirection
 
-et l'exécuter dans SQL Editor.
+Dans Supabase, ajouter l'URL GitHub Pages de SAM Phénologie dans les URL autorisées de redirection Auth.
 
-Deux tables sont créées :
+Exemple :
 
-- `parcels` : exploitation, parcelle, variété, date du stade C, modèle thermique et localisation météo ;
-- `observations` : historique des observations phénologiques.
+`https://votre-compte.github.io/sam-phenologie/`
 
-Les politiques RLS fournies dans le fichier donnent :
+Utiliser exactement l'URL publique de l'application, avec le `/` final si votre site l'utilise.
 
-- lecture aux visiteurs non connectés ;
-- ajout/modification/suppression uniquement aux utilisateurs Supabase authentifiés.
+## 4. Récupérer Project URL et Publishable key
 
-N'ajouter comme utilisateurs authentifiés que les personnes SudExpé autorisées à modifier les données.
+Dans le projet Supabase, ouvrir le panneau **Connect**.
 
-### 3. Récupérer l'URL et la clé publique
+Récupérer :
 
-Dans Supabase, récupérer :
+- **Project URL** — ressemble à `https://xxxxxxxx.supabase.co`
+- **Publishable key** — ressemble à `sb_publishable_...`
 
-- l'URL du projet ;
-- la **Publishable key** (ou l'ancienne `anon key`).
+Ne jamais utiliser dans GitHub une `secret key` ou une `service_role key`.
 
-Ne jamais mettre une `secret key` ou une `service_role key` dans GitHub.
-
-### 4. Modifier `supabase-config.js`
+## 5. Remplir supabase-config.js
 
 Remplacer :
 
@@ -93,54 +87,43 @@ window.SAM_SUPABASE = {
 };
 ```
 
-par les deux valeurs de votre projet.
+par exemple par :
 
-### 5. Créer le compte SudExpé
+```js
+window.SAM_SUPABASE = {
+  url: 'https://abcdefghijk.supabase.co',
+  publishableKey: 'sb_publishable_xxxxxxxxxxxxxxxxx'
+};
+```
 
-Dans Supabase > Authentication > Users, créer les comptes des personnes SudExpé qui auront le droit d'écrire.
+## 6. Connexion dans SAM Phénologie
 
-Une fois Supabase configuré :
+Une fois les fichiers publiés sur GitHub Pages :
 
-- un producteur non connecté peut consulter les données ;
-- les champs et boutons de modification sont verrouillés ;
-- le bouton **Connexion SudExpé** permet à une personne autorisée de passer en mode édition.
+1. cliquer sur **Connexion SudExpé** ;
+2. saisir l'adresse e-mail déjà présente dans Supabase ;
+3. cliquer sur **Recevoir le lien de connexion** ;
+4. ouvrir l'e-mail reçu ;
+5. cliquer sur le Magic Link ;
+6. le navigateur revient sur SAM Phénologie ;
+7. l'application passe en mode `Supabase · Édition SudExpé`.
 
-### 6. Premier envoi des données locales
+Aucun mot de passe n'est demandé.
 
-Après connexion SudExpé, ouvrir le panneau de connexion puis cliquer sur :
+## 7. Première synchronisation
 
-**Envoyer les données locales vers Supabase**
+Si des parcelles existent déjà uniquement dans le stockage local du navigateur :
 
-Cela transfère les parcelles et les observations déjà présentes dans le navigateur.
+1. se connecter comme SudExpé ;
+2. ouvrir **Connexion SudExpé / Compte SudExpé** ;
+3. cliquer sur **Envoyer les données locales vers Supabase**.
 
-## Courbe interactive
+Vérifier ensuite dans Supabase > Table Editor que les tables `parcels` et `observations` contiennent les données.
 
-Dans **Historique & courbes**, déplacer la souris sur la courbe. Une infobulle affiche :
+## Modèles phénologiques
 
-- la date ;
-- le cumul de degrés-jours ;
-- le stade phénologique correspondant ;
-- l'observation terrain lorsqu'une observation existe exactement à cette date.
+- Gala : modèle variétal WSU, base 6,1 °C pour les seuils disponibles ;
+- Cripps Pink / Pink Lady : modèle variétal WSU, base 6,1 °C pour les seuils disponibles ;
+- Golden Delicious, Joya, Reine des reinettes, Granny Smith, Ariane, Dalinette, Opal et autre variété : modèle générique du pommier base 5 °C lorsqu'aucun modèle complet C → J n'est intégré.
 
-## Modèles thermiques
-
-La version 2.6 conserve les modèles de la version 2.5 :
-
-- Gala : modèle variétal WSU intégré ;
-- Cripps Pink / Pink Lady : modèle variétal WSU intégré ;
-- Golden Delicious, Joya, Reine des reinettes, Granny Smith, Ariane, Dalinette, **Opal** et Autre variété : modèle générique du pommier.
-
-Le point de départ est le stade Fleckinger **C**.
-
-## GitHub Pages
-
-Après envoi des fichiers :
-
-1. vérifier que `index.html`, `app-v8.js` et `style-v8.css` sont à la racine ;
-2. Settings > Pages ;
-3. `Deploy from a branch` ;
-4. branche `main` ;
-5. dossier `/ (root)` ;
-6. enregistrer.
-
-Le service worker 2.6 utilise une nouvelle version de cache et privilégie le réseau pour `index.html`, afin de réduire les problèmes d'ancienne version lors des mises à jour.
+Les observations terrain restent prioritaires pour recaler les estimations.
