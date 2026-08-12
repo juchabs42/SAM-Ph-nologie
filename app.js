@@ -164,6 +164,7 @@ function bindEvents() {
   els.locationSearch.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); searchLocations(); } });
   els.locationResults.addEventListener('change', selectLocationResult);
   els.gddChart.addEventListener('pointermove', handleChartPointer);
+  els.gddChart.addEventListener('pointerdown', handleChartPointer);
   els.gddChart.addEventListener('pointerleave', hideChartTooltip);
 
   els.authBtn.addEventListener('click', () => els.authPanel.classList.toggle('hidden'));
@@ -1170,7 +1171,7 @@ async function loginSupabase() {
     console.error(error);
     return toast(`Lien non envoyé : ${error.message}`);
   }
-  els.authStatus.textContent = `Lien de connexion envoyé à ${email}. Ouvrez l’e-mail puis cliquez sur le lien pour revenir dans SAM Phénologie.`;
+  els.authStatus.textContent = `Lien de connexion envoyé à ${email}. Ouvrez l’e-mail puis cliquez sur le lien pour revenir dans SAM Phéno.`;
   toast('Lien de connexion envoyé.');
 }
 

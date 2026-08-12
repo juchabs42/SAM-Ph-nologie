@@ -1,62 +1,37 @@
-# SAM Phénologie
+# SAM Phéno
 
-Application web/PWA SudExpé de suivi des stades phénologiques du pommier par degrés-jours.
+Application web/PWA de suivi des stades phénologiques du pommier par degrés-jours, optimisée pour ordinateur et téléphone.
 
-## Organisation de l'interface
+## Version téléphone
 
-La configuration n'est plus affichée en permanence.
+- nom installé et affiché : **SAM Phéno** ;
+- icône et logo : image fournie pour SAM Phéno (`sam-pheno-logo.png`) ;
+- icônes PWA 192×192 et 512×512 incluses ;
+- interface responsive pour écrans à partir de 320 px ;
+- boutons et champs dimensionnés pour le tactile ;
+- sélection Exploitation → Parcelle simplifiée ;
+- tableaux transformés en cartes sur téléphone ;
+- onglets accessibles pendant le défilement ;
+- courbe des degrés-jours compatible souris et tactile ;
+- prise en compte des zones sûres Android/iOS ;
+- fonctionnement PWA et hors connexion conservé.
 
-Dans l'encart **Parcelle active** :
+## Fichiers à mettre sur GitHub
 
-- choisir d'abord l'**exploitation** ;
-- choisir ensuite la **parcelle** ;
-- cliquer sur **Configuration** pour afficher les paramètres de la parcelle active ;
-- cliquer sur **Nouvelle parcelle** pour ouvrir un formulaire vide, renseigner les paramètres, puis enregistrer la nouvelle parcelle.
-
-Le bouton **Nouvelle parcelle** n'est pas disponible en lecture seule.
-
-## Fichiers GitHub
-
-Les noms restent volontairement stables pour que les nouveaux fichiers écrasent les anciens :
-
-- `README.md`
 - `index.html`
 - `app.js`
 - `style.css`
 - `manifest.webmanifest`
 - `service-worker.js`
-- `icon.svg`
-- `sudexpe-logo.jpg`
 - `supabase-config.js`
 - `supabase-schema.sql`
+- `sam-pheno-logo.png`
+- `icon-192.png`
+- `icon-512.png`
+- `README.md`
 
-## Supabase
+Les noms `app.js` et `style.css` restent stables : il suffit de remplacer les fichiers existants sur GitHub.
 
-Le fichier `supabase-config.js` contient le Project URL et la Publishable key utilisés par l'application.
+## Installation sur téléphone
 
-Le script `supabase-schema.sql` crée les tables :
-
-- `public.parcels`
-- `public.observations`
-
-avec lecture publique et écriture réservée aux utilisateurs authentifiés.
-
-## Connexion
-
-La connexion se fait par Magic Link Supabase :
-
-1. cliquer sur **Connexion** ;
-2. saisir l'adresse mail ;
-3. cliquer sur **Recevoir le lien de connexion** ;
-4. ouvrir le lien reçu par e-mail ;
-5. revenir dans SAM Phénologie connecté.
-
-Le bouton d'envoi du lien reste désactivé pendant 60 secondes après un clic.
-
-## Modèles phénologiques
-
-- Gala : seuils variétaux intégrés lorsque disponibles ;
-- Cripps Pink / Pink Lady : seuils variétaux intégrés lorsque disponibles ;
-- Golden Delicious, Joya, Reine des reinettes, Granny Smith, Ariane, Dalinette, Opal et autre variété : modèle générique lorsque aucun modèle complet compatible n'est intégré.
-
-Les observations terrain restent prioritaires pour recaler les estimations.
+Ouvrir l'adresse GitHub Pages de SAM Phéno dans Chrome/Edge sur Android, puis utiliser **Installer l'application** ou **Ajouter à l'écran d'accueil**. Sur iPhone/iPad, utiliser **Partager → Sur l'écran d'accueil**.

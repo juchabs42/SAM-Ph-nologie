@@ -1,4 +1,4 @@
-const CACHE = 'sam-phenologie-shell-2026-08-12-config-panel';
+const CACHE = 'sam-pheno-mobile-2026-08-12';
 const ASSETS = [
   './',
   './index.html',
@@ -6,8 +6,9 @@ const ASSETS = [
   './app.js',
   './supabase-config.js',
   './manifest.webmanifest',
-  './icon.svg',
-  './sudexpe-logo.jpg'
+  './sam-pheno-logo.png',
+  './icon-192.png',
+  './icon-512.png'
 ];
 
 self.addEventListener('install', event => {
