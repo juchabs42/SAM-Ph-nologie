@@ -8,6 +8,9 @@ const LEGACY_WEATHER_CACHE_KEYS = ['sam-phenologie-weather-v2.6', 'sam-phenologi
 const DEFAULT_LOCATION = { name: 'Marsillargues', admin1: 'Occitanie', country: 'France', latitude: 43.6343, longitude: 4.1706, elevation: 2, timezone: 'Europe/Paris' };
 const DEFAULT_BASE_TEMP = 5;
 const FALLBACK_START = '-03-01';
+const LOGIN_COOLDOWN_MS = 60 * 1000;
+const LOGIN_COOLDOWN_KEY = 'sam-phenologie-login-cooldown-until';
+let loginCooldownTimer = null;
 
 const STAGE_META = [
   { id: 'C', label: 'C — éclatement des bourgeons', bbch: 'BBCH 53' },
@@ -110,6 +113,7 @@ async function init() {
   loadParcelIntoForm();
   loadCachedWeather();
   setEditMode();
+  restoreLoginCooldown();
   if (state.parcels.length) refreshWeather(false);
 }
 
@@ -1078,7 +1082,10 @@ function setEditMode() {
     els.dataModeBadge.textContent = supabaseConfigured ? (isAdmin ? 'Édition' : 'Lecture seule') : 'Mode local';
   }
   if (els.authBtn) els.authBtn.textContent = isAdmin ? 'Compte' : 'Connexion';
-  if (els.loginBtn) { els.loginBtn.classList.toggle('hidden', isAdmin); els.loginBtn.disabled = !supabaseConfigured || !supabaseClient; }
+  if (els.loginBtn) {
+    els.loginBtn.classList.toggle('hidden', isAdmin);
+    updateLoginCooldownButton();
+  }
   if (els.logoutBtn) els.logoutBtn.classList.toggle('hidden', !isAdmin);
   if (els.authStatus) {
     els.authStatus.textContent = supabaseConfigured
@@ -1095,7 +1102,7 @@ async function loginSupabase() {
   const email = els.authEmail.value.trim();
   if (!email) return toast('Renseignez votre adresse mail.');
 
-  els.loginBtn.disabled = true;
+  startLoginCooldown();
   const redirectTo = `${window.location.origin}${window.location.pathname}`;
   const { error } = await supabaseClient.auth.signInWithOtp({
     email,
@@ -1104,7 +1111,6 @@ async function loginSupabase() {
       emailRedirectTo: redirectTo
     }
   });
-  els.loginBtn.disabled = false;
 
   if (error) {
     console.error(error);
@@ -1113,6 +1119,46 @@ async function loginSupabase() {
   els.authStatus.textContent = `Lien de connexion envoyé à ${email}. Ouvrez l’e-mail puis cliquez sur le lien pour revenir dans SAM Phénologie.`;
   if (els.magicLinkHelp) els.magicLinkHelp.classList.remove('hidden');
   toast('Lien de connexion envoyé.');
+}
+
+function getLoginCooldownRemainingSeconds() {
+  const until = Number(localStorage.getItem(LOGIN_COOLDOWN_KEY) || 0);
+  if (!until) return 0;
+  return Math.max(0, Math.ceil((until - Date.now()) / 1000));
+}
+
+function updateLoginCooldownButton() {
+  if (!els.loginBtn) return;
+  const remaining = getLoginCooldownRemainingSeconds();
+  if (remaining > 0 && !isAdmin) {
+    els.loginBtn.disabled = true;
+    els.loginBtn.textContent = `Réessayer dans ${remaining} s`;
+    return;
+  }
+  if (remaining <= 0) localStorage.removeItem(LOGIN_COOLDOWN_KEY);
+  els.loginBtn.textContent = 'Recevoir le lien de connexion';
+  els.loginBtn.disabled = !supabaseConfigured || !supabaseClient || isAdmin;
+}
+
+function startLoginCooldown() {
+  localStorage.setItem(LOGIN_COOLDOWN_KEY, String(Date.now() + LOGIN_COOLDOWN_MS));
+  restoreLoginCooldown();
+}
+
+function restoreLoginCooldown() {
+  if (loginCooldownTimer) {
+    clearInterval(loginCooldownTimer);
+    loginCooldownTimer = null;
+  }
+  updateLoginCooldownButton();
+  if (getLoginCooldownRemainingSeconds() <= 0) return;
+  loginCooldownTimer = setInterval(() => {
+    updateLoginCooldownButton();
+    if (getLoginCooldownRemainingSeconds() <= 0) {
+      clearInterval(loginCooldownTimer);
+      loginCooldownTimer = null;
+    }
+  }, 1000);
 }
 
 async function logoutSupabase() {

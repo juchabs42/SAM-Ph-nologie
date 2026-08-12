@@ -127,3 +127,10 @@ Vérifier ensuite dans Supabase > Table Editor que les tables `parcels` et `obse
 - Golden Delicious, Joya, Reine des reinettes, Granny Smith, Ariane, Dalinette, Opal et autre variété : modèle générique du pommier base 5 °C lorsqu'aucun modèle complet C → J n'est intégré.
 
 Les observations terrain restent prioritaires pour recaler les estimations.
+
+
+## Sécurité de la connexion
+
+- Le bouton **Recevoir le lien de connexion** est désactivé pendant 60 secondes après chaque clic.
+- Le délai est conservé même si la page est actualisée pendant ces 60 secondes.
+- La limite globale d'envoi d'e-mails est gérée côté Supabase. Le fournisseur e-mail intégré Supabase reste limité à 2 e-mails/heure ; une limite personnalisée de 5 e-mails/heure nécessite un SMTP personnalisé puis un réglage dans Authentication > Rate Limits.

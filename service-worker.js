@@ -1,4 +1,4 @@
-const CACHE = 'sam-phenologie-shell-v2.8';
+const CACHE = 'sam-phenologie-shell-v2.9';
 const ASSETS = [
   './',
   './index.html',
