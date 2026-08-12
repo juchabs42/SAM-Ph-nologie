@@ -7,7 +7,7 @@
   <meta name="description" content="SAM Phénologie — suivi des stades phénologiques du pommier par degrés-jours.">
   <title>SAM Phénologie</title>
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="style.css?v=2.8">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="app-header">
@@ -48,6 +48,11 @@
         <div><span>Localisation météo</span><strong id="activeWeatherLocation">—</strong></div>
         <div><span>Point de départ</span><strong id="activeStart">—</strong></div>
       </div>
+
+      <div class="active-actions">
+        <button id="configurationBtn" class="secondary" type="button">Configuration</button>
+        <button id="newParcelBtn" data-editable type="button">Nouvelle parcelle</button>
+      </div>
     </section>
 
     <section id="authPanel" class="card hidden" aria-labelledby="auth-title">
@@ -58,7 +63,7 @@
         </div>
         <button id="closeAuthBtn" class="secondary" type="button">Fermer</button>
       </div>
-      <p id="authStatus" class="hint">Renseignez votre adresse e-mail SudExpé.</p>
+      <p id="authStatus" class="hint">Renseignez votre adresse mail.</p>
       <div class="grid two admin-entry">
         <label>Adresse mail
           <input id="authEmail" type="email" autocomplete="email" placeholder="prenom.nom@sudexpe.net">
@@ -66,9 +71,6 @@
         <div class="align-end">
           <button id="loginBtn" type="button">Recevoir le lien de connexion</button>
         </div>
-      </div>
-      <div id="magicLinkHelp" class="info-box hidden">
-        Le lien est valable pour une adresse déjà présente dans les utilisateurs Supabase. Cliquez sur le lien reçu : vous reviendrez automatiquement dans SAM Phénologie connecté, sans mot de passe.
       </div>
       <div class="actions admin-actions">
         <button id="logoutBtn" class="secondary hidden" type="button">Se déconnecter</button>
@@ -81,13 +83,16 @@
     </nav>
 
     <div id="dashboardView" class="view">
-      <section class="card" aria-labelledby="config-title">
+      <section id="configPanel" class="card hidden" aria-labelledby="config-title">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">Configuration</p>
-            <h2 id="config-title">Paramètres de la parcelle</h2>
+            <p id="configEyebrow" class="eyebrow">Configuration</p>
+            <h2 id="config-title">Paramètres de la parcelle active</h2>
           </div>
-          <span id="editStatus" class="mode-badge hidden">Lecture seule</span>
+          <div class="config-header-actions">
+            <span id="editStatus" class="mode-badge hidden">Lecture seule</span>
+            <button id="closeConfigBtn" class="secondary" type="button">Fermer</button>
+          </div>
         </div>
 
         <div class="grid two">
@@ -115,10 +120,8 @@
         <div id="modelStatus" class="model-status" aria-live="polite">
           <div>
             <span class="readonly-label">Modèle thermique appliqué</span>
-            <strong id="modelName">—</strong>
-            <p id="modelDescription">—</p>
+            <p id="modelDescription">Le calcul utilise les seuils génériques du pommier, recalables par les observations terrain.</p>
           </div>
-          <div id="modelReferenceLinks" class="model-links hidden"></div>
         </div>
 
         <div class="grid station-grid">
@@ -130,7 +133,6 @@
             </div>
             <select id="locationResults" data-editable class="hidden" aria-label="Résultats de recherche de localisation"></select>
             <div id="selectedLocation" class="selected-location">—</div>
-            <small>Saisissez le nom d’une commune ou un code postal. Les coordonnées nécessaires à Open-Meteo sont récupérées automatiquement.</small>
           </div>
 
           <label>
@@ -141,20 +143,15 @@
           </label>
         </div>
         <div id="baseTempInfo" class="info-box hidden"><span id="baseTempInfoText">La température de base est le seuil sous lequel le développement du pommier est considéré comme très faible. La valeur de 5 °C est utilisée pour calculer simplement l’accumulation de chaleur depuis le stade C.</span></div>
-        <p class="hint">Le point de départ du calcul est le <strong>stade C</strong>. Sans date observée au stade C, l’application produit une estimation indicative.</p>
 
         <div class="grid two">
           <label>Date du stade C observé
             <input id="stageCDate" data-editable type="date">
           </label>
-          <label>Dernière mise à jour météo
-            <input id="weatherLastUpdate" type="text" disabled value="Aucune donnée chargée">
-          </label>
         </div>
 
         <div class="actions admin-actions">
-          <button id="saveParcelBtn" data-editable type="button">Enregistrer la parcelle</button>
-          <button id="newParcelBtn" data-editable class="secondary" type="button">Nouvelle parcelle</button>
+          <button id="saveParcelBtn" data-editable type="button">Enregistrer les modifications</button>
           <button id="deleteParcelBtn" data-editable class="danger" type="button">Supprimer</button>
         </div>
       </section>
@@ -264,8 +261,8 @@
   <footer><strong>SudExpé</strong> · Outil d’aide au suivi</footer>
 
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="supabase-config.js?v=2.7"></script>
+  <script src="supabase-config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="app.js?v=2.8" defer></script>
+  <script src="app.js" defer></script>
 </body>
 </html>

@@ -1,22 +1,23 @@
-# SAM Phénologie — v2.7
+# SAM Phénologie
 
 Application web/PWA SudExpé de suivi des stades phénologiques du pommier par degrés-jours.
 
-## Nouveau dans la v2.7
+## Organisation de l'interface
 
-- vraie connexion **SudExpé par Magic Link** Supabase ;
-- aucun mot de passe à créer ou à saisir ;
-- l'adresse e-mail doit déjà exister dans `Authentication > Users` ;
-- `shouldCreateUser: false` empêche SAM Phénologie de créer automatiquement de nouveaux utilisateurs ;
-- après configuration de Supabase, les producteurs non connectés sont en **lecture seule** ;
-- les comptes SudExpé connectés peuvent créer/modifier les parcelles et observations ;
-- choix successif **Exploitation → Parcelle** dans l'encart Parcelle active ;
-- choix de la localisation météo par **nom de commune ou code postal**, sans saisie manuelle de latitude/longitude ;
-- infobulle interactive sur la courbe cumulée des degrés-jours : date, cumul et stade phénologique ;
-- variété **Opal** corrigée ;
-- pied de page : `SudExpé · Outil d’aide au suivi`.
+La configuration n'est plus affichée en permanence.
 
-## Fichiers à conserver dans GitHub
+Dans l'encart **Parcelle active** :
+
+- choisir d'abord l'**exploitation** ;
+- choisir ensuite la **parcelle** ;
+- cliquer sur **Configuration** pour afficher les paramètres de la parcelle active ;
+- cliquer sur **Nouvelle parcelle** pour ouvrir un formulaire vide, renseigner les paramètres, puis enregistrer la nouvelle parcelle.
+
+Le bouton **Nouvelle parcelle** n'est pas disponible en lecture seule.
+
+## Fichiers GitHub
+
+Les noms restent volontairement stables pour que les nouveaux fichiers écrasent les anciens :
 
 - `README.md`
 - `index.html`
@@ -29,108 +30,33 @@ Application web/PWA SudExpé de suivi des stades phénologiques du pommier par d
 - `supabase-config.js`
 - `supabase-schema.sql`
 
-Supprimer les anciens fichiers `app-v8.js`, `style-v8.css` et les versions plus anciennes.
+## Supabase
 
-## 1. Préparer Supabase
+Le fichier `supabase-config.js` contient le Project URL et la Publishable key utilisés par l'application.
 
-Dans Supabase > SQL Editor, exécuter le contenu de `supabase-schema.sql`.
-
-Le script crée :
+Le script `supabase-schema.sql` crée les tables :
 
 - `public.parcels`
 - `public.observations`
 
 avec lecture publique et écriture réservée aux utilisateurs authentifiés.
 
-## 2. Utilisateur SudExpé
+## Connexion
 
-L'utilisateur SudExpé doit déjà être visible dans :
-
-`Authentication > Users`
-
-Il n'a pas besoin d'avoir un mot de passe pour SAM Phénologie. La connexion se fera par Magic Link.
-
-Pour éviter qu'un visiteur puisse créer son propre compte :
-
-- désactiver les inscriptions libres dans la configuration Auth du projet ;
-- SAM utilise en plus `shouldCreateUser: false` lors de la demande de Magic Link.
-
-## 3. Configurer l'URL de redirection
-
-Dans Supabase, ajouter l'URL GitHub Pages de SAM Phénologie dans les URL autorisées de redirection Auth.
-
-Exemple :
-
-`https://votre-compte.github.io/sam-phenologie/`
-
-Utiliser exactement l'URL publique de l'application, avec le `/` final si votre site l'utilise.
-
-## 4. Récupérer Project URL et Publishable key
-
-Dans le projet Supabase, ouvrir le panneau **Connect**.
-
-Récupérer :
-
-- **Project URL** — ressemble à `https://xxxxxxxx.supabase.co`
-- **Publishable key** — ressemble à `sb_publishable_...`
-
-Ne jamais utiliser dans GitHub une `secret key` ou une `service_role key`.
-
-## 5. Remplir supabase-config.js
-
-Remplacer :
-
-```js
-window.SAM_SUPABASE = {
-  url: 'VOTRE_SUPABASE_URL',
-  publishableKey: 'VOTRE_SUPABASE_PUBLISHABLE_KEY'
-};
-```
-
-par exemple par :
-
-```js
-window.SAM_SUPABASE = {
-  url: 'https://abcdefghijk.supabase.co',
-  publishableKey: 'sb_publishable_xxxxxxxxxxxxxxxxx'
-};
-```
-
-## 6. Connexion dans SAM Phénologie
-
-Une fois les fichiers publiés sur GitHub Pages :
+La connexion se fait par Magic Link Supabase :
 
 1. cliquer sur **Connexion** ;
-2. saisir l'adresse e-mail déjà présente dans Supabase ;
+2. saisir l'adresse mail ;
 3. cliquer sur **Recevoir le lien de connexion** ;
-4. ouvrir l'e-mail reçu ;
-5. cliquer sur le Magic Link ;
-6. le navigateur revient sur SAM Phénologie ;
-7. l'application passe en mode `Supabase · Édition SudExpé`.
+4. ouvrir le lien reçu par e-mail ;
+5. revenir dans SAM Phénologie connecté.
 
-Aucun mot de passe n'est demandé.
-
-## 7. Première synchronisation
-
-Si des parcelles existent déjà uniquement dans le stockage local du navigateur :
-
-1. se connecter comme SudExpé ;
-2. ouvrir **Connexion / Compte** ;
-3. cliquer sur ****.
-
-Vérifier ensuite dans Supabase > Table Editor que les tables `parcels` et `observations` contiennent les données.
+Le bouton d'envoi du lien reste désactivé pendant 60 secondes après un clic.
 
 ## Modèles phénologiques
 
-- Gala : modèle variétal WSU, base 6,1 °C pour les seuils disponibles ;
-- Cripps Pink / Pink Lady : modèle variétal WSU, base 6,1 °C pour les seuils disponibles ;
-- Golden Delicious, Joya, Reine des reinettes, Granny Smith, Ariane, Dalinette, Opal et autre variété : modèle générique du pommier base 5 °C lorsqu'aucun modèle complet C → J n'est intégré.
+- Gala : seuils variétaux intégrés lorsque disponibles ;
+- Cripps Pink / Pink Lady : seuils variétaux intégrés lorsque disponibles ;
+- Golden Delicious, Joya, Reine des reinettes, Granny Smith, Ariane, Dalinette, Opal et autre variété : modèle générique lorsque aucun modèle complet compatible n'est intégré.
 
 Les observations terrain restent prioritaires pour recaler les estimations.
-
-
-## Sécurité de la connexion
-
-- Le bouton **Recevoir le lien de connexion** est désactivé pendant 60 secondes après chaque clic.
-- Le délai est conservé même si la page est actualisée pendant ces 60 secondes.
-- La limite globale d'envoi d'e-mails est gérée côté Supabase. Le fournisseur e-mail intégré Supabase reste limité à 2 e-mails/heure ; une limite personnalisée de 5 e-mails/heure nécessite un SMTP personnalisé puis un réglage dans Authentication > Rate Limits.

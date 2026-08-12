@@ -222,3 +222,37 @@ footer { padding: 24px; text-align: center; color: var(--muted); font-size: .82r
 #authPanel .grid.two { align-items: end; }
 #authPanel .align-end button { width: 100%; }
 #authStatus { margin-top: 0; }
+
+/* Accès rapide à la configuration de la parcelle active */
+.active-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.config-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+#configPanel {
+  scroll-margin-top: 16px;
+}
+#configPanel .grid.two > label:only-child {
+  grid-column: 1 / -1;
+  max-width: 520px;
+}
+@media (max-width: 760px) {
+  .active-actions,
+  .config-header-actions {
+    width: 100%;
+  }
+  .active-actions button,
+  .config-header-actions button {
+    flex: 1 1 auto;
+  }
+}
+.readonly-mode #configPanel .admin-actions { display: none; }

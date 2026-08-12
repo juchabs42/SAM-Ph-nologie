@@ -68,7 +68,7 @@ const MODEL_CONFIG = {
     baseTemp: DEFAULT_BASE_TEMP,
     fixedBase: false,
     thresholds: GENERIC_THRESHOLDS,
-    description: 'Aucun modèle variétal complet et compatible C → J n’a été retenu pour cette variété. Le calcul utilise les seuils génériques du pommier, recalables par les observations terrain.',
+    description: 'Le calcul utilise les seuils génériques du pommier, recalables par les observations terrain.',
     referenceLinks: []
   }
 };
@@ -96,6 +96,7 @@ let chartHoverState = null;
 let supabaseClient = null;
 let supabaseConfigured = false;
 let isAdmin = false;
+let configFormMode = 'edit';
 
 window.addEventListener('DOMContentLoaded', init);
 
@@ -121,8 +122,8 @@ function bindElements() {
   [
     'exploitationSelect','parcelSelect','activeVariety','activeWeatherLocation','activeStart','dataModeBadge',
     'dashboardTabBtn','historyTabBtn','dashboardView','historyView',
-    'exploitation','parcelName','variety','stageCDate','baseTemp','weatherLastUpdate','varietyInfoText','baseTempInfoText','modelName','modelDescription','modelReferenceLinks',
-    'locationSearch','searchLocationBtn','locationResults','selectedLocation','editStatus',
+    'exploitation','parcelName','variety','stageCDate','baseTemp','varietyInfoText','baseTempInfoText','modelDescription',
+    'locationSearch','searchLocationBtn','locationResults','selectedLocation','editStatus','configPanel','configurationBtn','closeConfigBtn','configEyebrow',
     'saveParcelBtn','newParcelBtn','deleteParcelBtn',
     'stageMain','stageBbch','gddTotal','nextStage','nextDate','calibrationNotice',
     'alertsSection','alertsList','observationDate','observationStage','addObservationBtn','observationsList',
@@ -130,7 +131,7 @@ function bindElements() {
     'stageHistoryStatus','stageHistoryWrap','stageHistoryBody',
     'chartCurrentGdd','chartNextThreshold','chartForecastEnd','gddChartStatus','gddChart','chartWrap','chartTooltip',
     'installBtn','toast','importStagesBtn','importStagesBtnTop','importStagesInput',
-    'authBtn','authPanel','closeAuthBtn','authEmail','loginBtn','logoutBtn','authStatus','magicLinkHelp'
+    'authBtn','authPanel','closeAuthBtn','authEmail','loginBtn','logoutBtn','authStatus'
   ].forEach(id => els[id] = document.getElementById(id));
 }
 
@@ -139,12 +140,16 @@ function bindEvents() {
   els.parcelSelect.addEventListener('change', async () => {
     state.activeParcelId = els.parcelSelect.value;
     persistState();
+    configFormMode = 'edit';
     loadParcelIntoForm();
+    if (!els.configPanel.classList.contains('hidden')) updateConfigPanelMode();
     loadCachedWeather();
     await refreshWeather(false);
   });
+  els.configurationBtn.addEventListener('click', openConfiguration);
+  els.closeConfigBtn.addEventListener('click', closeConfiguration);
   els.saveParcelBtn.addEventListener('click', saveParcelFromForm);
-  els.newParcelBtn.addEventListener('click', newParcel);
+  els.newParcelBtn.addEventListener('click', openNewParcel);
   els.deleteParcelBtn.addEventListener('click', deleteParcel);
   els.addObservationBtn.addEventListener('click', addObservation);
   els.refreshBtn.addEventListener('click', () => refreshWeather(true));
@@ -293,7 +298,9 @@ async function handleExploitationChange() {
   state.activeParcelId = parcels[0].id;
   persistState();
   renderParcelSelect();
+  configFormMode = 'edit';
   loadParcelIntoForm();
+  if (!els.configPanel.classList.contains('hidden')) updateConfigPanelMode();
   loadCachedWeather();
   await refreshWeather(false);
 }
@@ -324,26 +331,19 @@ function updateModelUi(resetBase) {
     els.baseTemp.value = model.baseTemp;
     els.baseTemp.disabled = true;
   } else {
-    els.baseTemp.disabled = false;
+    els.baseTemp.disabled = !canEdit();
     if (resetBase) els.baseTemp.value = DEFAULT_BASE_TEMP;
   }
 
-  els.modelName.textContent = model.name;
-  els.modelDescription.textContent = model.description;
+  els.modelDescription.textContent = model.fixedBase
+    ? 'Le calcul utilise les seuils variétaux intégrés pour cette variété, recalables par les observations terrain.'
+    : 'Le calcul utilise les seuils génériques du pommier, recalables par les observations terrain.';
   els.varietyInfoText.textContent = model.fixedBase
-    ? `${variety.label} dispose d’un modèle variétal intégré. Les seuils publiés sont utilisés de C à H.`
+    ? `${variety.label} dispose d’un modèle variétal intégré.`
     : 'En l’absence de modèle variétal validé et compatible avec tous les stades suivis, le calcul utilise le modèle générique du pommier.';
   els.baseTempInfoText.textContent = model.fixedBase
     ? `Le modèle scientifique de ${variety.label} utilise une température de base de ${String(model.baseTemp).replace('.', ',')} °C (43 °F). Cette valeur est imposée pour conserver la cohérence avec les seuils variétaux publiés.`
     : 'La température de base est le seuil sous lequel le développement du pommier est considéré comme très faible. La valeur de 5 °C est utilisée pour calculer simplement l’accumulation de chaleur depuis le stade C.';
-
-  if (model.referenceLinks.length) {
-    els.modelReferenceLinks.innerHTML = model.referenceLinks.map(link => `<a href="${link.url}" target="_blank" rel="noopener noreferrer">${link.label}</a>`).join('');
-    els.modelReferenceLinks.classList.remove('hidden');
-  } else {
-    els.modelReferenceLinks.innerHTML = '';
-    els.modelReferenceLinks.classList.add('hidden');
-  }
 }
 
 function updateActiveSummary() {
@@ -358,35 +358,91 @@ function updateActiveSummary() {
 
 async function saveParcelFromForm() {
   if (!canEdit()) return toast('Connexion nécessaire pour modifier les données.');
-  const p = activeParcel();
-  p.exploitation = els.exploitation.value.trim() || 'SudExpé';
-  p.name = els.parcelName.value.trim() || 'Parcelle';
-  p.variety = els.variety.value;
-  p.stageCDate = els.stageCDate.value;
-  p.weatherLocation = normalizeLocation(pendingLocation || p.weatherLocation || DEFAULT_LOCATION);
-  const model = getModelForVariety(p.variety);
-  p.baseTemp = model.fixedBase ? model.baseTemp : clampNumber(parseFloat(els.baseTemp.value), 0, 15, DEFAULT_BASE_TEMP);
+
+  const exploitation = els.exploitation.value.trim();
+  const name = els.parcelName.value.trim();
+  if (!exploitation) return toast('Renseignez l’exploitation.');
+  if (!name) return toast('Renseignez le nom de la parcelle.');
+
+  const variety = els.variety.value;
+  const model = getModelForVariety(variety);
+  const parcelData = {
+    exploitation,
+    name,
+    variety,
+    stageCDate: els.stageCDate.value,
+    weatherLocation: normalizeLocation(pendingLocation || DEFAULT_LOCATION),
+    baseTemp: model.fixedBase ? model.baseTemp : clampNumber(parseFloat(els.baseTemp.value), 0, 15, DEFAULT_BASE_TEMP)
+  };
+
+  const wasNew = configFormMode === 'new';
+  let p;
+  if (wasNew) {
+    p = {
+      id: uid(),
+      ...parcelData,
+      observations: []
+    };
+    state.parcels.push(p);
+    state.activeParcelId = p.id;
+  } else {
+    p = activeParcel();
+    Object.assign(p, parcelData);
+  }
+
   persistState();
   if (supabaseConfigured && isAdmin) await syncParcelToSupabase(p);
   renderExploitationSelect();
   renderParcelSelect();
+  configFormMode = 'edit';
   loadParcelIntoForm();
+  closeConfiguration();
   loadCachedWeather();
   await refreshWeather(true);
-  toast('Parcelle enregistrée.');
+  toast(wasNew ? 'Nouvelle parcelle enregistrée.' : 'Parcelle enregistrée.');
 }
 
-async function newParcel() {
-  if (!canEdit()) return toast('Connexion nécessaire pour créer une parcelle.');
-  const p = createDefaultParcel();
-  state.parcels.push(p);
-  state.activeParcelId = p.id;
-  persistState();
-  if (supabaseConfigured && isAdmin) await syncParcelToSupabase(p);
-  renderExploitationSelect();
-  renderParcelSelect();
+function openConfiguration() {
+  configFormMode = 'edit';
+  switchTab('dashboard');
   loadParcelIntoForm();
-  toast('Nouvelle parcelle créée.');
+  updateConfigPanelMode();
+  els.configPanel.classList.remove('hidden');
+  els.configPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function openNewParcel() {
+  if (!canEdit()) return toast('Connexion nécessaire pour créer une parcelle.');
+  configFormMode = 'new';
+  switchTab('dashboard');
+  els.exploitation.value = els.exploitationSelect.value || '';
+  els.parcelName.value = '';
+  els.variety.value = 'gala';
+  els.stageCDate.value = '';
+  pendingLocation = { ...DEFAULT_LOCATION };
+  els.locationSearch.value = '';
+  els.locationResults.classList.add('hidden');
+  renderSelectedLocation();
+  updateModelUi(true);
+  updateConfigPanelMode();
+  els.configPanel.classList.remove('hidden');
+  els.configPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  setEditMode();
+}
+
+function closeConfiguration() {
+  els.configPanel.classList.add('hidden');
+  configFormMode = 'edit';
+  loadParcelIntoForm();
+}
+
+function updateConfigPanelMode() {
+  const isNew = configFormMode === 'new';
+  const title = document.getElementById('config-title');
+  if (els.configEyebrow) els.configEyebrow.textContent = isNew ? 'Nouvelle parcelle' : 'Configuration';
+  if (title) title.textContent = isNew ? 'Paramètres de la nouvelle parcelle' : 'Paramètres de la parcelle active';
+  els.saveParcelBtn.textContent = isNew ? 'Enregistrer la nouvelle parcelle' : 'Enregistrer les modifications';
+  els.deleteParcelBtn.classList.toggle('hidden', isNew);
 }
 
 async function deleteParcel() {
@@ -559,7 +615,6 @@ async function refreshWeather(force) {
     const stamp = new Date().toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
     saveWeatherCache(activeWeather, p, stamp);
     els.weatherStatus.textContent = `Données de ${loc.name} actualisées le ${stamp}.`;
-    els.weatherLastUpdate.value = stamp;
     renderPhenology();
   } catch (error) {
     console.error(error);
@@ -590,7 +645,6 @@ function mergeWeather(history, forecast, today) {
 function renderPhenology() {
   const p = activeParcel();
   updateActiveSummary();
-  els.weatherLastUpdate.value = getCachedWeatherStamp(activeParcel()) || 'Aucune donnée chargée';
 
   if (!p) return;
   if (!activeWeather || !activeWeather.length) {
@@ -932,7 +986,6 @@ function loadCachedWeather() {
     const entry = store[weatherCacheKey(p)];
     if (entry?.data) {
       activeWeather = entry.data;
-      els.weatherLastUpdate.value = entry.updated || 'Données locales';
       return;
     }
     activeWeather = null;
@@ -1082,6 +1135,7 @@ function setEditMode() {
     els.dataModeBadge.textContent = supabaseConfigured ? (isAdmin ? 'Édition' : 'Lecture seule') : 'Mode local';
   }
   if (els.authBtn) els.authBtn.textContent = isAdmin ? 'Compte' : 'Connexion';
+  if (els.newParcelBtn) els.newParcelBtn.classList.toggle('hidden', !editable);
   if (els.loginBtn) {
     els.loginBtn.classList.toggle('hidden', isAdmin);
     updateLoginCooldownButton();
@@ -1117,7 +1171,6 @@ async function loginSupabase() {
     return toast(`Lien non envoyé : ${error.message}`);
   }
   els.authStatus.textContent = `Lien de connexion envoyé à ${email}. Ouvrez l’e-mail puis cliquez sur le lien pour revenir dans SAM Phénologie.`;
-  if (els.magicLinkHelp) els.magicLinkHelp.classList.remove('hidden');
   toast('Lien de connexion envoyé.');
 }
 
