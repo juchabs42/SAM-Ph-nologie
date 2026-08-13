@@ -742,3 +742,11 @@ footer { padding: 24px; text-align: center; color: var(--muted); font-size: .82r
   .auth-form { grid-template-columns: 1fr; }
   .active-card { top: 8px; }
 }
+
+
+/* Parcelle active : ne reste pas figée pendant le défilement */
+.active-card {
+  position: static !important;
+  top: auto !important;
+  z-index: auto !important;
+}
