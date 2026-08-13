@@ -84,7 +84,7 @@ const VARIETIES = [
 ];
 
 const els = {};
-let state = loadState();
+let state = { parcels: [], activeParcelId: null };
 let activeWeather = null;
 let latestAnalysis = null;
 let deferredPrompt = null;
@@ -95,10 +95,12 @@ let supabaseConfigured = false;
 let isAdmin = false;
 let configFormMode = 'edit';
 
+clearLegacyParcelStorage();
 window.addEventListener('DOMContentLoaded', init);
 
 async function init() {
   bindElements();
+  clearLegacyParcelStorage();
   populateVarieties();
   populateStages();
   bindEvents();
@@ -184,59 +186,18 @@ function populateStages() {
   els.observationStage.innerHTML = STAGE_META.map(stage => `<option value="${stage.id}">${stage.label}</option>`).join('');
 }
 
-function createDefaultParcel() {
-  const selectedExploitation = els.exploitationSelect?.value || 'SudExpé Marsillargues';
-  return {
-    id: uid(),
-    exploitation: selectedExploitation,
-    name: 'Parcelle 1',
-    variety: 'gala',
-    customVarietyName: '',
-    stageCDate: '',
-    baseTemp: MODEL_CONFIG.gala.baseTemp,
-    weatherLocation: { ...DEFAULT_LOCATION },
-    observations: []
-  };
-}
-
-function loadState() {
+function clearLegacyParcelStorage() {
   try {
-    let raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      for (const key of LEGACY_STORAGE_KEYS) {
-        raw = localStorage.getItem(key);
-        if (raw) break;
-      }
-    }
-    if (!raw) {
-      const p = createDefaultParcel();
-      return { parcels: [p], activeParcelId: p.id };
-    }
-    const parsed = JSON.parse(raw);
-    parsed.parcels = Array.isArray(parsed.parcels) && parsed.parcels.length ? parsed.parcels : [createDefaultParcel()];
-    if (!parsed.activeParcelId || !parsed.parcels.some(p => p.id === parsed.activeParcelId)) parsed.activeParcelId = parsed.parcels[0].id;
-    parsed.parcels.forEach(p => {
-      p.observations = Array.isArray(p.observations) ? p.observations : [];
-      if (!p.exploitation) p.exploitation = '';
-      if (!p.name) p.name = 'Parcelle';
-      if (!p.variety) p.variety = 'other';
-      if (!('customVarietyName' in p)) p.customVarietyName = '';
-      if (!('stageCDate' in p)) p.stageCDate = '';
-      const model = getModelForVariety(p.variety);
-      if (model.fixedBase) p.baseTemp = model.baseTemp;
-      else if (typeof p.baseTemp !== 'number') p.baseTemp = DEFAULT_BASE_TEMP;
-    });
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
-    return parsed;
-  } catch (e) {
-    console.error(e);
-    const p = createDefaultParcel();
-    return { parcels: [p], activeParcelId: p.id };
+    localStorage.removeItem(STORAGE_KEY);
+    LEGACY_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
+  } catch (error) {
+    console.warn('Nettoyage du stockage local impossible', error);
   }
 }
 
 function persistState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  // Les parcelles et observations ont Supabase comme source unique de vérité.
+  // Aucun historique de parcelle n'est conservé dans le navigateur.
 }
 
 function activeParcel() {
@@ -263,21 +224,30 @@ function normalizeState() {
 function renderExploitationSelect() {
   const current = activeParcel()?.exploitation || '';
   const values = [...new Set(state.parcels.map(p => p.exploitation).filter(Boolean))].sort((a,b) => a.localeCompare(b, 'fr'));
+  if (!values.length) {
+    els.exploitationSelect.innerHTML = '<option value="">Aucune exploitation</option>';
+    els.exploitationSelect.disabled = true;
+    return;
+  }
+  els.exploitationSelect.disabled = false;
   els.exploitationSelect.innerHTML = values.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
-  if (values.includes(current)) els.exploitationSelect.value = current;
+  els.exploitationSelect.value = values.includes(current) ? current : values[0];
 }
 
 function renderParcelSelect() {
   const exploitation = els.exploitationSelect.value || activeParcel()?.exploitation || '';
   const parcels = state.parcels.filter(p => p.exploitation === exploitation);
-  els.parcelSelect.innerHTML = parcels.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
-  let selected = parcels.find(p => p.id === state.activeParcelId);
-  if (!selected && parcels.length) {
-    selected = parcels[0];
-    state.activeParcelId = selected.id;
-    persistState();
+  if (!parcels.length) {
+    els.parcelSelect.innerHTML = '<option value="">Aucune parcelle</option>';
+    els.parcelSelect.disabled = true;
+    state.activeParcelId = null;
+    return;
   }
-  if (selected) els.parcelSelect.value = selected.id;
+  els.parcelSelect.disabled = false;
+  els.parcelSelect.innerHTML = parcels.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+  let selected = parcels.find(p => p.id === state.activeParcelId) || parcels[0];
+  state.activeParcelId = selected.id;
+  els.parcelSelect.value = selected.id;
 }
 
 async function handleExploitationChange() {
@@ -295,7 +265,25 @@ async function handleExploitationChange() {
 
 function loadParcelIntoForm() {
   const p = activeParcel();
-  if (!p) return;
+  if (!p) {
+    els.exploitation.value = '';
+    els.parcelName.value = '';
+    els.variety.value = 'gala';
+    els.otherVarietyName.value = '';
+    els.stageCDate.value = '';
+    els.baseTemp.value = MODEL_CONFIG.gala.baseTemp;
+    els.activeVariety.textContent = '—';
+    els.activeWeatherLocation.textContent = '—';
+    els.activeStart.textContent = '—';
+    els.observationsList.innerHTML = '<p class="hint">Aucune parcelle enregistrée.</p>';
+    activeWeather = null;
+    latestAnalysis = null;
+    resetDashboard('Aucune parcelle enregistrée');
+    renderStageHistory(null);
+    drawChart();
+    setEditMode();
+    return;
+  }
   els.exploitation.value = p.exploitation || '';
   els.parcelName.value = p.name || '';
   els.variety.value = p.variety || 'other';
@@ -360,33 +348,25 @@ async function saveParcelFromForm() {
   const customVarietyName = variety === 'other' ? els.otherVarietyName.value.trim() : '';
   if (variety === 'other' && !customVarietyName) return toast('Renseignez le nom de la variété.');
   const model = getModelForVariety(variety);
-  const parcelData = {
+  const wasNew = configFormMode === 'new';
+  const current = activeParcel();
+  const candidate = {
+    id: wasNew ? uid() : current?.id,
     exploitation,
     name,
     variety,
     customVarietyName,
     stageCDate: els.stageCDate.value,
     weatherLocation: normalizeLocation(pendingLocation || DEFAULT_LOCATION),
-    baseTemp: model.fixedBase ? model.baseTemp : clampNumber(parseFloat(els.baseTemp.value), 0, 15, DEFAULT_BASE_TEMP)
+    baseTemp: model.fixedBase ? model.baseTemp : clampNumber(parseFloat(els.baseTemp.value), 0, 15, DEFAULT_BASE_TEMP),
+    observations: current?.observations || []
   };
+  if (!candidate.id) return toast('Aucune parcelle active.');
 
-  const wasNew = configFormMode === 'new';
-  let p;
-  if (wasNew) {
-    p = {
-      id: uid(),
-      ...parcelData,
-      observations: []
-    };
-    state.parcels.push(p);
-    state.activeParcelId = p.id;
-  } else {
-    p = activeParcel();
-    Object.assign(p, parcelData);
-  }
-
-  persistState();
-  if (supabaseConfigured && isAdmin) await syncParcelToSupabase(p);
+  const saved = await syncParcelToSupabase(candidate);
+  if (!saved) return;
+  await loadRemoteData();
+  if (state.parcels.some(p => p.id === candidate.id)) state.activeParcelId = candidate.id;
   renderExploitationSelect();
   renderParcelSelect();
   configFormMode = 'edit';
@@ -443,38 +423,39 @@ function updateConfigPanelMode() {
 
 async function deleteParcel() {
   if (!canEdit()) return toast('Connexion nécessaire pour supprimer une parcelle.');
-  if (state.parcels.length === 1) return toast('Impossible de supprimer la dernière parcelle.');
   const id = state.activeParcelId;
-  if (supabaseConfigured && isAdmin) {
-    const { error } = await supabaseClient.from('parcels').delete().eq('id', id);
-    if (error) return toast(`Suppression Supabase impossible : ${error.message}`);
-  }
-  state.parcels = state.parcels.filter(p => p.id !== id);
-  state.activeParcelId = state.parcels[0].id;
-  persistState();
+  if (!id) return toast('Aucune parcelle à supprimer.');
+  const { error } = await supabaseClient.from('parcels').delete().eq('id', id);
+  if (error) return toast(`Suppression impossible : ${error.message}`);
+  await loadRemoteData();
   renderExploitationSelect();
   renderParcelSelect();
   loadParcelIntoForm();
-  loadCachedWeather();
-  await refreshWeather(false);
+  if (state.parcels.length) {
+    loadCachedWeather();
+    await refreshWeather(false);
+  }
   toast('Parcelle supprimée.');
 }
 
 async function addObservation() {
   if (!canEdit()) return toast('Connexion nécessaire pour ajouter une observation.');
   const p = activeParcel();
+  if (!p) return toast('Aucune parcelle active.');
   const date = els.observationDate.value;
   const stage = els.observationStage.value;
   if (!date) return toast('Choisissez une date.');
-  p.observations = p.observations.filter(o => o.date !== date);
-  p.observations.push({ date, stage });
-  p.observations.sort((a, b) => a.date.localeCompare(b.date));
-  if (stage === 'C') p.stageCDate = date;
-  persistState();
-  if (supabaseConfigured && isAdmin) {
-    await syncParcelToSupabase(p);
-    await syncObservationToSupabase(p.id, { date, stage });
+
+  const obsSaved = await syncObservationToSupabase(p.id, { date, stage });
+  if (!obsSaved) return;
+  if (stage === 'C') {
+    const updatedParcel = { ...p, stageCDate: date };
+    const parcelSaved = await syncParcelToSupabase(updatedParcel);
+    if (!parcelSaved) return;
   }
+  await loadRemoteData();
+  renderExploitationSelect();
+  renderParcelSelect();
   loadParcelIntoForm();
   toast('Observation ajoutée.');
 }
@@ -482,14 +463,13 @@ async function addObservation() {
 async function removeObservation(date) {
   if (!canEdit()) return toast('Connexion nécessaire pour supprimer une observation.');
   const p = activeParcel();
-  p.observations = p.observations.filter(o => o.date !== date);
-  persistState();
-  if (supabaseConfigured && isAdmin) {
-    const { error } = await supabaseClient.from('observations').delete().eq('parcel_id', p.id).eq('obs_date', date);
-    if (error) toast(`Suppression distante impossible : ${error.message}`);
-  }
-  renderObservations();
-  renderPhenology();
+  if (!p) return;
+  const { error } = await supabaseClient.from('observations').delete().eq('parcel_id', p.id).eq('obs_date', date);
+  if (error) return toast(`Suppression impossible : ${error.message}`);
+  await loadRemoteData();
+  renderExploitationSelect();
+  renderParcelSelect();
+  loadParcelIntoForm();
 }
 
 function renderObservations() {
@@ -1012,18 +992,33 @@ async function handleImportFile(event) {
     event.target.value = '';
     return;
   }
-  const p = activeParcel();
-  imported.forEach(obs => {
-    p.observations = p.observations.filter(o => o.date !== obs.date);
-    p.observations.push(obs);
-    if (obs.stage === 'C' && !p.stageCDate) p.stageCDate = obs.date;
-  });
-  p.observations.sort((a, b) => a.date.localeCompare(b.date));
-  persistState();
-  if (supabaseConfigured && isAdmin) {
-    await syncParcelToSupabase(p);
-    for (const obs of imported) await syncObservationToSupabase(p.id, obs);
+  if (!canEdit()) {
+    event.target.value = '';
+    return toast('Connexion nécessaire pour importer des observations.');
   }
+  const p = activeParcel();
+  if (!p) {
+    event.target.value = '';
+    return toast('Aucune parcelle active.');
+  }
+  for (const obs of imported) {
+    const ok = await syncObservationToSupabase(p.id, obs);
+    if (!ok) {
+      event.target.value = '';
+      return;
+    }
+  }
+  const stageC = imported.find(obs => obs.stage === 'C');
+  if (stageC && !p.stageCDate) {
+    const ok = await syncParcelToSupabase({ ...p, stageCDate: stageC.date });
+    if (!ok) {
+      event.target.value = '';
+      return;
+    }
+  }
+  await loadRemoteData();
+  renderExploitationSelect();
+  renderParcelSelect();
   loadParcelIntoForm();
   toast(`${imported.length} observation(s) importée(s).`);
   event.target.value = '';
@@ -1061,7 +1056,7 @@ function normalizeStage(value) {
 
 
 function canEdit() {
-  return !supabaseConfigured || isAdmin;
+  return supabaseConfigured && isAdmin;
 }
 
 async function initSupabase() {
@@ -1152,7 +1147,7 @@ function setEditMode() {
       ? (supabaseClient
           ? (isAdmin ? 'Connecté · mode édition' : 'Lecture seule')
           : 'Connexion indisponible')
-      : 'Mode local';
+      : 'Connexion indisponible';
   }
   renderObservations();
 }
@@ -1208,17 +1203,19 @@ async function loadRemoteData() {
   ]);
   if (parcelError || obsError) {
     console.error(parcelError || obsError);
+    state = { parcels: [], activeParcelId: null };
+    activeWeather = null;
+    latestAnalysis = null;
     els.authStatus.textContent = `Connexion Supabase établie, mais les tables ne sont pas encore accessibles. Exécutez le fichier supabase-schema.sql.`;
     return;
   }
-  if (!parcels?.length) return;
   const obsByParcel = new Map();
   (observations || []).forEach(o => {
     if (!obsByParcel.has(o.parcel_id)) obsByParcel.set(o.parcel_id, []);
     obsByParcel.get(o.parcel_id).push({ date: o.obs_date, stage: o.stage });
   });
   const previousId = state.activeParcelId;
-  state.parcels = parcels.map(row => ({
+  state.parcels = (parcels || []).map(row => ({
     id: row.id,
     exploitation: row.exploitation,
     name: row.name,
@@ -1237,7 +1234,11 @@ async function loadRemoteData() {
     }),
     observations: obsByParcel.get(row.id) || []
   }));
-  state.activeParcelId = state.parcels.some(p => p.id === previousId) ? previousId : state.parcels[0].id;
+  state.activeParcelId = state.parcels.some(p => p.id === previousId) ? previousId : (state.parcels[0]?.id || null);
+  if (!state.parcels.length) {
+    activeWeather = null;
+    latestAnalysis = null;
+  }
   normalizeState();
 }
 
@@ -1263,16 +1264,18 @@ function parcelRow(parcel) {
 }
 
 async function syncParcelToSupabase(parcel) {
-  if (!supabaseClient || !isAdmin) return;
+  if (!supabaseClient || !isAdmin) return false;
   const { error } = await supabaseClient.from('parcels').upsert(parcelRow(parcel), { onConflict: 'id' });
   if (error) {
     console.error(error);
-    toast(`Sauvegarde Supabase impossible : ${error.message}`);
+    toast(`Sauvegarde impossible : ${error.message}`);
+    return false;
   }
+  return true;
 }
 
 async function syncObservationToSupabase(parcelId, observation) {
-  if (!supabaseClient || !isAdmin) return;
+  if (!supabaseClient || !isAdmin) return false;
   const { error } = await supabaseClient.from('observations').upsert({
     parcel_id: parcelId,
     obs_date: observation.date,
@@ -1281,8 +1284,10 @@ async function syncObservationToSupabase(parcelId, observation) {
   }, { onConflict: 'parcel_id,obs_date' });
   if (error) {
     console.error(error);
-    toast(`Observation Supabase non enregistrée : ${error.message}`);
+    toast(`Observation non enregistrée : ${error.message}`);
+    return false;
   }
+  return true;
 }
 
 function getModelForVariety(varietyId) {
