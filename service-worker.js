@@ -1,4 +1,4 @@
-const CACHE = 'sam-pheno-mobile-password-auth-2026-08-13';
+const CACHE = 'sam-pheno-common-header-2026-08-13';
 const ASSETS = [
   './',
   './index.html',
@@ -6,7 +6,7 @@ const ASSETS = [
   './app.js',
   './supabase-config.js',
   './manifest.webmanifest',
-  './sam-pheno-logo.png',
+  './logo-sudexpe.png',
   './icon-192.png',
   './icon-512.png'
 ];

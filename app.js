@@ -126,7 +126,7 @@ function bindElements() {
     'refreshBtn','weatherStatus','forecastTableWrap','forecastBody',
     'stageHistoryStatus','stageHistoryWrap','stageHistoryBody',
     'chartCurrentGdd','chartNextThreshold','chartForecastEnd','gddChartStatus','gddChart','chartWrap','chartTooltip',
-    'installBtn','toast','importStagesBtn','importStagesBtnTop','importStagesInput',
+    'toast','importStagesBtn','importStagesBtnTop','importStagesInput',
     'loginForm','loggedInBox','loggedInEmail','authEmail','authPassword','loginBtn','logoutBtn','authStatus'
   ].forEach(id => els[id] = document.getElementById(id));
 }
@@ -163,23 +163,11 @@ function bindEvents() {
   els.gddChart.addEventListener('pointerdown', handleChartPointer);
   els.gddChart.addEventListener('pointerleave', hideChartTooltip);
 
-  els.loginBtn.addEventListener('click', loginSupabase);
-  els.authPassword.addEventListener('keydown', event => { if (event.key === 'Enter') loginSupabase(); });
-  els.authEmail.addEventListener('keydown', event => { if (event.key === 'Enter') els.authPassword.focus(); });
-  els.logoutBtn.addEventListener('click', logoutSupabase);
-
-  window.addEventListener('beforeinstallprompt', (event) => {
+  els.loginForm.addEventListener('submit', event => {
     event.preventDefault();
-    deferredPrompt = event;
-    els.installBtn.classList.remove('hidden');
+    loginSupabase();
   });
-  els.installBtn.addEventListener('click', async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    await deferredPrompt.userChoice;
-    deferredPrompt = null;
-    els.installBtn.classList.add('hidden');
-  });
+  els.logoutBtn.addEventListener('click', logoutSupabase);
   window.addEventListener('resize', () => drawChart());
 }
 

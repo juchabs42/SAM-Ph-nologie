@@ -1,12 +1,12 @@
 {
-  "name": "SAM Phéno",
-  "short_name": "SAM Phéno",
+  "name": "SAM Phéno.",
+  "short_name": "SAM Phéno.",
   "description": "Suivi des stades phénologiques du pommier par degrés-jours.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#F6F3F4",
-  "theme_color": "#E3084D",
+  "theme_color": "#D31145",
   "lang": "fr-FR",
   "orientation": "portrait-primary",
   "icons": [
