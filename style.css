@@ -990,3 +990,51 @@ button, select, input { touch-action: manipulation; }
   .active-summary div:nth-child(3) { grid-column: auto; }
   .active-actions { grid-template-columns: 1fr; }
 }
+
+
+/* ===== Ajustements bandeau : icône SAM Phéno + installation mobile uniquement ===== */
+.brand-logos {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 0 0 auto;
+}
+.sam-app-logo {
+  width: 58px;
+  height: 58px;
+  display: block;
+  object-fit: cover;
+  border-radius: 13px;
+  background: #fff;
+}
+
+/* Le bouton Installer est invisible sur ordinateur, même si le JavaScript l'active. */
+.install-button {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .brand-logos { gap: 7px; }
+  .sam-app-logo {
+    width: 46px;
+    height: 46px;
+    border-radius: 11px;
+  }
+  .install-button:not(.hidden) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 520px) {
+  .logo-shell {
+    width: 94px;
+    height: 44px;
+    flex: 0 0 94px;
+  }
+  .sam-app-logo {
+    width: 44px;
+    height: 44px;
+  }
+}
