@@ -1,4 +1,4 @@
-const CACHE = 'sam-pheno-mobile-2026-08-12';
+const CACHE = 'sam-pheno-mobile-password-auth-2026-08-13';
 const ASSETS = [
   './',
   './index.html',

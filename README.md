@@ -1,22 +1,36 @@
 # SAM Phéno
 
-Application web/PWA de suivi des stades phénologiques du pommier par degrés-jours, optimisée pour ordinateur et téléphone.
+Application web/PWA de suivi des stades phénologiques du pommier par degrés-jours.
 
-## Version téléphone
+## Fonctionnement des accès
 
-- nom installé et affiché : **SAM Phéno** ;
-- icône et logo : image fournie pour SAM Phéno (`sam-pheno-logo.png`) ;
-- icônes PWA 192×192 et 512×512 incluses ;
-- interface responsive pour écrans à partir de 320 px ;
-- boutons et champs dimensionnés pour le tactile ;
-- sélection Exploitation → Parcelle simplifiée ;
-- tableaux transformés en cartes sur téléphone ;
-- onglets accessibles pendant le défilement ;
-- courbe des degrés-jours compatible souris et tactile ;
-- prise en compte des zones sûres Android/iOS ;
-- fonctionnement PWA et hors connexion conservé.
+- **Lecture seule** : aucun compte nécessaire. Seul l’onglet **Historique & courbes** est visible.
+- **Mode édition** : connexion par **adresse mail + mot de passe** avec un compte créé manuellement dans Supabase.
+- L’application ne contient **aucun formulaire d’inscription** et n’appelle jamais `signUp()`.
+- Dans Supabase, désactiver **Allow new users to sign up** et ne créer que les comptes autorisés dans `Authentication > Users`.
 
-## Fichiers à mettre sur GitHub
+## Autre variété
+
+Si **Autre variété** est sélectionné, un champ **Nom de la variété** apparaît. Le calcul utilise le modèle générique du pommier. Le nom saisi est enregistré dans Supabase dans la colonne `custom_variety_name`.
+
+## Mise à jour Supabase
+
+Si les tables existent déjà, exécuter `supabase-schema.sql` dans **SQL Editor**. Le script contient notamment :
+
+```sql
+alter table public.parcels add column if not exists custom_variety_name text;
+```
+
+Les politiques RLS conservent :
+
+- lecture publique pour `anon` et `authenticated` ;
+- écriture pour les comptes `authenticated`.
+
+Pour que seuls les comptes créés manuellement puissent écrire, désactiver les inscriptions libres et les autres méthodes d’authentification non utilisées.
+
+## Fichiers GitHub
+
+Conserver à la racine :
 
 - `index.html`
 - `app.js`
@@ -30,8 +44,4 @@ Application web/PWA de suivi des stades phénologiques du pommier par degrés-jo
 - `icon-512.png`
 - `README.md`
 
-Les noms `app.js` et `style.css` restent stables : il suffit de remplacer les fichiers existants sur GitHub.
-
-## Installation sur téléphone
-
-Ouvrir l'adresse GitHub Pages de SAM Phéno dans Chrome/Edge sur Android, puis utiliser **Installer l'application** ou **Ajouter à l'écran d'accueil**. Sur iPhone/iPad, utiliser **Partager → Sur l'écran d'accueil**.
+Les fichiers `app.js` et `style.css` gardent volontairement des noms stables pour remplacer directement les versions précédentes lors d’un upload GitHub.

@@ -210,7 +210,6 @@ footer { padding: 24px; text-align: center; color: var(--muted); font-size: .82r
 [data-editable]:disabled { cursor: not-allowed; opacity: .68; }
 .readonly-mode .admin-entry,
 .readonly-mode .admin-actions { opacity: .75; }
-#authPanel { border-left: 4px solid var(--brand); }
 .header-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 @media (max-width: 760px) {
   .active-selectors, .active-summary { grid-template-columns: 1fr; }
@@ -219,9 +218,6 @@ footer { padding: 24px; text-align: center; color: var(--muted); font-size: .82r
   .chart-tooltip { min-width: 150px; max-width: 220px; }
 }
 
-#authPanel .grid.two { align-items: end; }
-#authPanel .align-end button { width: 100%; }
-#authStatus { margin-top: 0; }
 
 /* Accès rapide à la configuration de la parcelle active */
 .active-actions {
@@ -491,10 +487,7 @@ footer { padding: 24px; text-align: center; color: var(--muted); font-size: .82r
     font-size: .73rem;
   }
 
-  #authPanel .section-heading { display: grid; grid-template-columns: 1fr auto; align-items: start; }
-  #authPanel .admin-entry { gap: 8px; }
-  #authPanel .align-end button { width: 100%; }
-
+  
   #toast {
     width: calc(100% - 24px);
     max-width: 420px;
@@ -515,4 +508,100 @@ footer { padding: 24px; text-align: center; color: var(--muted); font-size: .82r
   .active-summary { grid-template-columns: 1fr; }
   .active-summary div:nth-child(3) { grid-column: auto; }
   .hero-stats, .chart-metrics { grid-template-columns: 1fr; }
+}
+
+/* ===== Connexion e-mail + mot de passe ===== */
+.login-card {
+  min-width: min(520px, 48vw);
+  padding: 10px;
+  border: 1px solid #F0C8D5;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .92);
+  box-shadow: 0 5px 16px rgba(96, 34, 49, .07);
+}
+.login-form {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(140px, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+.login-form label {
+  font-size: .72rem;
+  gap: 4px;
+}
+.login-form input {
+  min-height: 40px;
+  padding: 8px 10px;
+  font-size: .85rem;
+}
+.login-form button {
+  min-height: 40px;
+  padding: 8px 13px;
+}
+.login-status {
+  margin: 6px 2px 0 !important;
+  font-size: .72rem;
+  color: var(--muted) !important;
+}
+.logged-in-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.logged-in-box span {
+  display: block;
+  color: var(--brand);
+  font-size: .68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.logged-in-box strong {
+  display: block;
+  margin-top: 2px;
+  font-size: .8rem;
+  overflow-wrap: anywhere;
+}
+#otherVarietyField { margin-top: 12px; }
+.readonly-mode .tabs { justify-content: stretch; }
+
+@media (max-width: 900px) {
+  .app-header {
+    align-items: flex-start;
+  }
+  .login-card { min-width: 0; width: 100%; }
+  .login-form { grid-template-columns: 1fr 1fr; }
+  .login-form button { grid-column: 1 / -1; width: 100%; }
+}
+
+@media (max-width: 760px) {
+  .app-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .header-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: start;
+  }
+  .login-card { width: 100%; padding: 9px; }
+  .login-form {
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+  }
+  .login-form label { font-size: .7rem; }
+  .login-form input { min-height: 44px; font-size: 16px; }
+  .login-form button { grid-column: 1 / -1; min-height: 44px; }
+  .logged-in-box { align-items: stretch; }
+  .logged-in-box button { flex: 0 0 auto; }
+  .readonly-mode .tabs { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 480px) {
+  .header-actions { grid-template-columns: 1fr; }
+  .login-form { grid-template-columns: 1fr; }
+  .login-form button { grid-column: auto; }
+  #installBtn { width: 100%; }
 }

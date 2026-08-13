@@ -21,7 +21,25 @@
       </div>
     </div>
     <div class="header-actions">
-      <button id="authBtn" class="secondary" type="button">Connexion</button>
+      <div class="login-card" aria-label="Connexion au mode édition">
+        <div id="loginForm" class="login-form">
+          <label>Adresse mail
+            <input id="authEmail" type="email" autocomplete="username" placeholder="nom@exemple.fr">
+          </label>
+          <label>Mot de passe
+            <input id="authPassword" type="password" autocomplete="current-password" placeholder="Mot de passe">
+          </label>
+          <button id="loginBtn" type="button">Connexion</button>
+        </div>
+        <div id="loggedInBox" class="logged-in-box hidden">
+          <div>
+            <span>Mode édition</span>
+            <strong id="loggedInEmail">—</strong>
+          </div>
+          <button id="logoutBtn" class="secondary" type="button">Déconnexion</button>
+        </div>
+        <p id="authStatus" class="login-status">Lecture seule</p>
+      </div>
       <button id="installBtn" class="secondary hidden" type="button">Installer</button>
     </div>
   </header>
@@ -57,34 +75,12 @@
       </div>
     </section>
 
-    <section id="authPanel" class="card hidden" aria-labelledby="auth-title">
-      <div class="section-heading">
-        <div>
-          <p class="eyebrow">Accès</p>
-          <h2 id="auth-title">Connexion par lien reçu par e-mail</h2>
-        </div>
-        <button id="closeAuthBtn" class="secondary" type="button">Fermer</button>
-      </div>
-      <p id="authStatus" class="hint">Renseignez votre adresse mail.</p>
-      <div class="grid two admin-entry">
-        <label>Adresse mail
-          <input id="authEmail" type="email" autocomplete="email" placeholder="prenom.nom@sudexpe.net">
-        </label>
-        <div class="align-end">
-          <button id="loginBtn" type="button">Recevoir le lien de connexion</button>
-        </div>
-      </div>
-      <div class="actions admin-actions">
-        <button id="logoutBtn" class="secondary hidden" type="button">Se déconnecter</button>
-      </div>
-    </section>
-
     <nav class="tabs" aria-label="Navigation principale">
-      <button id="dashboardTabBtn" class="tab-button active" type="button" aria-selected="true">Suivi actuel</button>
-      <button id="historyTabBtn" class="tab-button" type="button" aria-selected="false">Historique &amp; courbes</button>
+      <button id="dashboardTabBtn" class="tab-button" type="button" aria-selected="false">Suivi actuel</button>
+      <button id="historyTabBtn" class="tab-button active" type="button" aria-selected="true">Historique &amp; courbes</button>
     </nav>
 
-    <div id="dashboardView" class="view">
+    <div id="dashboardView" class="view hidden">
       <section id="configPanel" class="card hidden" aria-labelledby="config-title">
         <div class="section-heading">
           <div>
@@ -115,6 +111,11 @@
               <button type="button" class="info-btn" data-info="varietyInfo" aria-label="Information sur la variété">i</button>
             </span>
             <select id="variety" data-editable></select>
+          </label>
+        </div>
+        <div id="otherVarietyField" class="grid one hidden">
+          <label>Nom de la variété
+            <input id="otherVarietyName" data-editable type="text" placeholder="Ex. Chantecler">
           </label>
         </div>
         <div id="varietyInfo" class="info-box hidden"><span id="varietyInfoText">En l’absence de modèle variétal validé, le calcul utilise le modèle générique du pommier.</span></div>
@@ -215,7 +216,7 @@
       </section>
     </div>
 
-    <div id="historyView" class="view hidden">
+    <div id="historyView" class="view">
       <section class="card" aria-labelledby="stage-history-title">
         <div class="section-heading">
           <div>

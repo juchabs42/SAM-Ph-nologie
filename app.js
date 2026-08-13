@@ -1,6 +1,6 @@
 'use strict';
 
-const VERSION = '2.7';
+const VERSION = '3.0';
 const STORAGE_KEY = 'sam-phenologie-v2.7';
 const LEGACY_STORAGE_KEYS = ['sam-phenologie-v2.6', 'sam-phenologie-v2.5', 'sam-phenologie-v2.4', 'sam-phenologie-v2.3', 'sam-phenologie-v1'];
 const WEATHER_CACHE_KEY = 'sam-phenologie-weather-v2.7';
@@ -8,9 +8,6 @@ const LEGACY_WEATHER_CACHE_KEYS = ['sam-phenologie-weather-v2.6', 'sam-phenologi
 const DEFAULT_LOCATION = { name: 'Marsillargues', admin1: 'Occitanie', country: 'France', latitude: 43.6343, longitude: 4.1706, elevation: 2, timezone: 'Europe/Paris' };
 const DEFAULT_BASE_TEMP = 5;
 const FALLBACK_START = '-03-01';
-const LOGIN_COOLDOWN_MS = 60 * 1000;
-const LOGIN_COOLDOWN_KEY = 'sam-phenologie-login-cooldown-until';
-let loginCooldownTimer = null;
 
 const STAGE_META = [
   { id: 'C', label: 'C — éclatement des bourgeons', bbch: 'BBCH 53' },
@@ -114,7 +111,6 @@ async function init() {
   loadParcelIntoForm();
   loadCachedWeather();
   setEditMode();
-  restoreLoginCooldown();
   if (state.parcels.length) refreshWeather(false);
 }
 
@@ -122,7 +118,7 @@ function bindElements() {
   [
     'exploitationSelect','parcelSelect','activeVariety','activeWeatherLocation','activeStart','dataModeBadge',
     'dashboardTabBtn','historyTabBtn','dashboardView','historyView',
-    'exploitation','parcelName','variety','stageCDate','baseTemp','varietyInfoText','baseTempInfoText','modelDescription',
+    'exploitation','parcelName','variety','otherVarietyField','otherVarietyName','stageCDate','baseTemp','varietyInfoText','baseTempInfoText','modelDescription',
     'locationSearch','searchLocationBtn','locationResults','selectedLocation','editStatus','configPanel','configurationBtn','closeConfigBtn','configEyebrow',
     'saveParcelBtn','newParcelBtn','deleteParcelBtn',
     'stageMain','stageBbch','gddTotal','nextStage','nextDate','calibrationNotice',
@@ -131,7 +127,7 @@ function bindElements() {
     'stageHistoryStatus','stageHistoryWrap','stageHistoryBody',
     'chartCurrentGdd','chartNextThreshold','chartForecastEnd','gddChartStatus','gddChart','chartWrap','chartTooltip',
     'installBtn','toast','importStagesBtn','importStagesBtnTop','importStagesInput',
-    'authBtn','authPanel','closeAuthBtn','authEmail','loginBtn','logoutBtn','authStatus'
+    'loginForm','loggedInBox','loggedInEmail','authEmail','authPassword','loginBtn','logoutBtn','authStatus'
   ].forEach(id => els[id] = document.getElementById(id));
 }
 
@@ -167,9 +163,9 @@ function bindEvents() {
   els.gddChart.addEventListener('pointerdown', handleChartPointer);
   els.gddChart.addEventListener('pointerleave', hideChartTooltip);
 
-  els.authBtn.addEventListener('click', () => els.authPanel.classList.toggle('hidden'));
-  els.closeAuthBtn.addEventListener('click', () => els.authPanel.classList.add('hidden'));
   els.loginBtn.addEventListener('click', loginSupabase);
+  els.authPassword.addEventListener('keydown', event => { if (event.key === 'Enter') loginSupabase(); });
+  els.authEmail.addEventListener('keydown', event => { if (event.key === 'Enter') els.authPassword.focus(); });
   els.logoutBtn.addEventListener('click', logoutSupabase);
 
   window.addEventListener('beforeinstallprompt', (event) => {
@@ -207,6 +203,7 @@ function createDefaultParcel() {
     exploitation: selectedExploitation,
     name: 'Parcelle 1',
     variety: 'gala',
+    customVarietyName: '',
     stageCDate: '',
     baseTemp: MODEL_CONFIG.gala.baseTemp,
     weatherLocation: { ...DEFAULT_LOCATION },
@@ -235,6 +232,7 @@ function loadState() {
       if (!p.exploitation) p.exploitation = '';
       if (!p.name) p.name = 'Parcelle';
       if (!p.variety) p.variety = 'other';
+      if (!('customVarietyName' in p)) p.customVarietyName = '';
       if (!('stageCDate' in p)) p.stageCDate = '';
       const model = getModelForVariety(p.variety);
       if (model.fixedBase) p.baseTemp = model.baseTemp;
@@ -264,6 +262,7 @@ function normalizeState() {
     p.name = p.name || 'Parcelle';
     if (p.variety === 'opale') p.variety = 'opal';
     p.variety = p.variety || 'other';
+    p.customVarietyName = p.customVarietyName || '';
     p.stageCDate = p.stageCDate || '';
     const model = getModelForVariety(p.variety);
     p.baseTemp = model.fixedBase ? model.baseTemp : (typeof p.baseTemp === 'number' ? p.baseTemp : DEFAULT_BASE_TEMP);
@@ -312,6 +311,7 @@ function loadParcelIntoForm() {
   els.exploitation.value = p.exploitation || '';
   els.parcelName.value = p.name || '';
   els.variety.value = p.variety || 'other';
+  els.otherVarietyName.value = p.customVarietyName || '';
   els.stageCDate.value = p.stageCDate || '';
   els.baseTemp.value = p.baseTemp ?? getModelForVariety(p.variety).baseTemp;
   pendingLocation = normalizeLocation(p.weatherLocation || DEFAULT_LOCATION);
@@ -328,6 +328,9 @@ function loadParcelIntoForm() {
 function updateModelUi(resetBase) {
   const variety = VARIETIES.find(v => v.id === els.variety.value) || VARIETIES[VARIETIES.length - 1];
   const model = MODEL_CONFIG[variety.model] || MODEL_CONFIG.generic;
+  const isOther = variety.id === 'other';
+  els.otherVarietyField.classList.toggle('hidden', !isOther);
+  if (!isOther && resetBase) els.otherVarietyName.value = '';
   if (model.fixedBase) {
     els.baseTemp.value = model.baseTemp;
     els.baseTemp.disabled = true;
@@ -350,7 +353,7 @@ function updateModelUi(resetBase) {
 function updateActiveSummary() {
   const p = activeParcel();
   if (!p) return;
-  const variety = VARIETIES.find(v => v.id === p.variety)?.label || '—';
+  const variety = p.variety === 'other' ? (p.customVarietyName || 'Autre variété') : (VARIETIES.find(v => v.id === p.variety)?.label || '—');
   const loc = normalizeLocation(p.weatherLocation || DEFAULT_LOCATION);
   els.activeVariety.textContent = variety;
   els.activeWeatherLocation.textContent = locationLabel(loc);
@@ -366,11 +369,14 @@ async function saveParcelFromForm() {
   if (!name) return toast('Renseignez le nom de la parcelle.');
 
   const variety = els.variety.value;
+  const customVarietyName = variety === 'other' ? els.otherVarietyName.value.trim() : '';
+  if (variety === 'other' && !customVarietyName) return toast('Renseignez le nom de la variété.');
   const model = getModelForVariety(variety);
   const parcelData = {
     exploitation,
     name,
     variety,
+    customVarietyName,
     stageCDate: els.stageCDate.value,
     weatherLocation: normalizeLocation(pendingLocation || DEFAULT_LOCATION),
     baseTemp: model.fixedBase ? model.baseTemp : clampNumber(parseFloat(els.baseTemp.value), 0, 15, DEFAULT_BASE_TEMP)
@@ -419,6 +425,7 @@ function openNewParcel() {
   els.exploitation.value = els.exploitationSelect.value || '';
   els.parcelName.value = '';
   els.variety.value = 'gala';
+  els.otherVarietyName.value = '';
   els.stageCDate.value = '';
   pendingLocation = { ...DEFAULT_LOCATION };
   els.locationSearch.value = '';
@@ -1072,8 +1079,6 @@ function canEdit() {
 async function initSupabase() {
   const cfg = window.SAM_SUPABASE || {};
   const usable = cfg.url && cfg.publishableKey && !cfg.url.includes('VOTRE_') && !cfg.publishableKey.includes('VOTRE_');
-  els.authBtn.classList.remove('hidden');
-
   if (!usable) {
     supabaseConfigured = false;
     isAdmin = false;
@@ -1096,7 +1101,7 @@ async function initSupabase() {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: true
+      detectSessionInUrl: false
     }
   });
 
@@ -1135,19 +1140,31 @@ function setEditMode() {
   if (els.dataModeBadge) {
     els.dataModeBadge.textContent = supabaseConfigured ? (isAdmin ? 'Édition' : 'Lecture seule') : 'Mode local';
   }
-  if (els.authBtn) els.authBtn.textContent = isAdmin ? 'Compte' : 'Connexion';
-  if (els.newParcelBtn) els.newParcelBtn.classList.toggle('hidden', !editable);
-  if (els.loginBtn) {
-    els.loginBtn.classList.toggle('hidden', isAdmin);
-    updateLoginCooldownButton();
+
+  if (els.loginForm) els.loginForm.classList.toggle('hidden', isAdmin);
+  if (els.loggedInBox) els.loggedInBox.classList.toggle('hidden', !isAdmin);
+  if (els.loggedInEmail) els.loggedInEmail.textContent = isAdmin ? (supabaseClient?.auth?.getUser ? 'Connecté' : 'Connecté') : '—';
+  if (isAdmin && supabaseClient) {
+    supabaseClient.auth.getUser().then(({ data }) => {
+      if (els.loggedInEmail) els.loggedInEmail.textContent = data?.user?.email || 'Connecté';
+    }).catch(() => {});
   }
-  if (els.logoutBtn) els.logoutBtn.classList.toggle('hidden', !isAdmin);
+  if (els.newParcelBtn) els.newParcelBtn.classList.toggle('hidden', !editable);
+  if (els.configurationBtn) els.configurationBtn.classList.toggle('hidden', !editable);
+
+  if (supabaseConfigured && !isAdmin) {
+    els.dashboardTabBtn.classList.add('hidden');
+    switchTab('history');
+  } else {
+    els.dashboardTabBtn.classList.remove('hidden');
+  }
+
   if (els.authStatus) {
     els.authStatus.textContent = supabaseConfigured
       ? (supabaseClient
-          ? (isAdmin ? 'Connecté : les modifications sont enregistrées.' : 'Consultation publique : connectez-vous avec un compte pour modifier les données.')
-          : 'Supabase est configuré mais le module de connexion est indisponible. L’application reste en lecture seule.')
-      : 'Supabase n’est pas configuré : renseignez Project URL et Publishable key dans supabase-config.js. Le mode local reste disponible pour préparer les données.';
+          ? (isAdmin ? 'Connecté · mode édition' : 'Lecture seule')
+          : 'Connexion indisponible')
+      : 'Mode local';
   }
   renderObservations();
 }
@@ -1155,64 +1172,34 @@ function setEditMode() {
 async function loginSupabase() {
   if (!supabaseConfigured || !supabaseClient) return toast('Configurez d’abord Supabase dans supabase-config.js.');
   const email = els.authEmail.value.trim();
+  const password = els.authPassword.value;
   if (!email) return toast('Renseignez votre adresse mail.');
+  if (!password) return toast('Renseignez votre mot de passe.');
 
-  startLoginCooldown();
-  const redirectTo = `${window.location.origin}${window.location.pathname}`;
-  const { error } = await supabaseClient.auth.signInWithOtp({
-    email,
-    options: {
-      shouldCreateUser: false,
-      emailRedirectTo: redirectTo
-    }
-  });
+  els.loginBtn.disabled = true;
+  els.loginBtn.textContent = 'Connexion…';
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  els.loginBtn.disabled = false;
+  els.loginBtn.textContent = 'Connexion';
 
   if (error) {
     console.error(error);
-    return toast(`Lien non envoyé : ${error.message}`);
+    els.authPassword.value = '';
+    els.authStatus.textContent = 'Lecture seule';
+    return toast('Adresse mail ou mot de passe incorrect.');
   }
-  els.authStatus.textContent = `Lien de connexion envoyé à ${email}. Ouvrez l’e-mail puis cliquez sur le lien pour revenir dans SAM Phéno.`;
-  toast('Lien de connexion envoyé.');
-}
 
-function getLoginCooldownRemainingSeconds() {
-  const until = Number(localStorage.getItem(LOGIN_COOLDOWN_KEY) || 0);
-  if (!until) return 0;
-  return Math.max(0, Math.ceil((until - Date.now()) / 1000));
-}
-
-function updateLoginCooldownButton() {
-  if (!els.loginBtn) return;
-  const remaining = getLoginCooldownRemainingSeconds();
-  if (remaining > 0 && !isAdmin) {
-    els.loginBtn.disabled = true;
-    els.loginBtn.textContent = `Réessayer dans ${remaining} s`;
-    return;
-  }
-  if (remaining <= 0) localStorage.removeItem(LOGIN_COOLDOWN_KEY);
-  els.loginBtn.textContent = 'Recevoir le lien de connexion';
-  els.loginBtn.disabled = !supabaseConfigured || !supabaseClient || isAdmin;
-}
-
-function startLoginCooldown() {
-  localStorage.setItem(LOGIN_COOLDOWN_KEY, String(Date.now() + LOGIN_COOLDOWN_MS));
-  restoreLoginCooldown();
-}
-
-function restoreLoginCooldown() {
-  if (loginCooldownTimer) {
-    clearInterval(loginCooldownTimer);
-    loginCooldownTimer = null;
-  }
-  updateLoginCooldownButton();
-  if (getLoginCooldownRemainingSeconds() <= 0) return;
-  loginCooldownTimer = setInterval(() => {
-    updateLoginCooldownButton();
-    if (getLoginCooldownRemainingSeconds() <= 0) {
-      clearInterval(loginCooldownTimer);
-      loginCooldownTimer = null;
-    }
-  }, 1000);
+  isAdmin = Boolean(data?.session?.user);
+  els.authPassword.value = '';
+  setEditMode();
+  switchTab('dashboard');
+  await loadRemoteData();
+  renderExploitationSelect();
+  renderParcelSelect();
+  loadParcelIntoForm();
+  loadCachedWeather();
+  await refreshWeather(false);
+  toast('Mode édition activé.');
 }
 
 async function logoutSupabase() {
@@ -1220,7 +1207,8 @@ async function logoutSupabase() {
   await supabaseClient.auth.signOut();
   isAdmin = false;
   setEditMode();
-  els.authPanel.classList.add('hidden');
+  els.authEmail.value = '';
+  els.authPassword.value = '';
   toast('Déconnecté.');
 }
 
@@ -1247,6 +1235,7 @@ async function loadRemoteData() {
     exploitation: row.exploitation,
     name: row.name,
     variety: row.variety === 'opale' ? 'opal' : row.variety,
+    customVarietyName: row.custom_variety_name || '',
     stageCDate: row.stage_c_date || '',
     baseTemp: Number(row.base_temp ?? DEFAULT_BASE_TEMP),
     weatherLocation: normalizeLocation({
@@ -1271,6 +1260,7 @@ function parcelRow(parcel) {
     exploitation: parcel.exploitation,
     name: parcel.name,
     variety: parcel.variety,
+    custom_variety_name: parcel.variety === 'other' ? (parcel.customVarietyName || null) : null,
     stage_c_date: parcel.stageCDate || null,
     base_temp: parcel.baseTemp,
     weather_location_name: loc.name,
