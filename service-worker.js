@@ -1,4 +1,4 @@
-const CACHE = 'sam-pheno-common-header-2026-08-13';
+const CACHE = 'sam-pheno-icon-phenologie-2';
 const ASSETS = [
   './',
   './index.html',
@@ -7,8 +7,8 @@ const ASSETS = [
   './supabase-config.js',
   './manifest.webmanifest',
   './logo-sudexpe.png',
-  './icon-192.png',
-  './icon-512.png'
+  './icon-192.png?v=phenologie-2',
+  './icon-512.png?v=phenologie-2'
 ];
 
 self.addEventListener('install', event => {
