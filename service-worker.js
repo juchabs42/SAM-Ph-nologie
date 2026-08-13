@@ -1,4 +1,4 @@
-const CACHE = 'sam-pheno-clean-supabase-1';
+const CACHE = 'sam-pheno-mobile-install-1';
 const ASSETS = [
   './',
   './index.html',

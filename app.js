@@ -104,6 +104,7 @@ async function init() {
   populateVarieties();
   populateStages();
   bindEvents();
+  initInstallButton();
   normalizeState();
   registerServiceWorker();
   await initSupabase();
@@ -129,7 +130,7 @@ function bindElements() {
     'stageHistoryStatus','stageHistoryWrap','stageHistoryBody',
     'chartCurrentGdd','chartNextThreshold','chartForecastEnd','gddChartStatus','gddChart','chartWrap','chartTooltip',
     'toast','importStagesBtn','importStagesBtnTop','importStagesInput',
-    'loginForm','loggedInBox','loggedInEmail','authEmail','authPassword','loginBtn','logoutBtn','authStatus'
+    'loginForm','loggedInBox','loggedInEmail','authEmail','authPassword','loginBtn','logoutBtn','authStatus','installBtn'
   ].forEach(id => els[id] = document.getElementById(id));
 }
 
@@ -934,8 +935,66 @@ function switchTab(tab) {
   if (!dash) setTimeout(drawChart, 50);
 }
 
+function isStandaloneApp() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+function isIosDevice() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent);
+}
+
+function initInstallButton() {
+  if (!els.installBtn) return;
+
+  if (isStandaloneApp()) {
+    els.installBtn.classList.add('hidden');
+    return;
+  }
+
+  els.installBtn.classList.remove('hidden');
+
+  window.addEventListener('beforeinstallprompt', event => {
+    event.preventDefault();
+    deferredPrompt = event;
+    els.installBtn.classList.remove('hidden');
+  });
+
+  els.installBtn.addEventListener('click', async () => {
+    if (isStandaloneApp()) {
+      els.installBtn.classList.add('hidden');
+      return;
+    }
+
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      if (outcome === 'accepted') {
+        els.installBtn.classList.add('hidden');
+        toast('Installation de SAM Phéno. lancée.', 3000);
+      }
+      return;
+    }
+
+    if (isIosDevice()) {
+      toast('Sur iPhone : Safari → Partager → Sur l’écran d’accueil.', 5500);
+      return;
+    }
+
+    toast('Dans le menu du navigateur, choisissez « Installer l’application » ou « Ajouter à l’écran d’accueil ».', 5500);
+  });
+
+  window.addEventListener('appinstalled', () => {
+    deferredPrompt = null;
+    els.installBtn.classList.add('hidden');
+    toast('SAM Phéno. est installée.', 3000);
+  });
+}
+
 function registerServiceWorker() {
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js');
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./service-worker.js').catch(error => console.warn('Service worker non enregistré', error));
+  }
 }
 
 function weatherCacheKey(parcel) {
@@ -1316,9 +1375,10 @@ function round1(n) { return (Math.round((Number(n) + Number.EPSILON) * 10) / 10)
 function clampNumber(value, min, max, fallback) { return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback; }
 function uid() { return 'p_' + Math.random().toString(36).slice(2, 10); }
 function escapeHtml(str) { return String(str).replace(/[&<>'"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;' }[c])); }
-function toast(message) {
+function toast(message, duration = 1800) {
+  if (!els.toast) return;
   els.toast.textContent = message;
   els.toast.classList.add('show');
   clearTimeout(toast._timer);
-  toast._timer = setTimeout(() => els.toast.classList.remove('show'), 1800);
+  toast._timer = setTimeout(() => els.toast.classList.remove('show'), duration);
 }

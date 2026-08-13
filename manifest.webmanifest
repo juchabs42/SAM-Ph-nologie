@@ -1,4 +1,5 @@
 {
+  "id": "./",
   "name": "SAM Phéno.",
   "short_name": "SAM Phéno.",
   "description": "Suivi des stades phénologiques du pommier par degrés-jours.",
