@@ -1,4 +1,4 @@
-const CACHE = 'sam-pheno-mobile-install-1';
+const CACHE = 'sam-pheno-mobile-install-2';
 const ASSETS = [
   './',
   './index.html',
@@ -7,10 +7,13 @@ const ASSETS = [
   './supabase-config.js',
   './manifest.webmanifest',
   './logo-sudexpe.png',
-  './favicon.ico?v=phenologie-3',
-  './favicon.png?v=phenologie-3',
-  './icon-192.png?v=phenologie-2',
-  './icon-512.png?v=phenologie-2'
+  './logo-sam-pheno.png',
+  './bouton-connexion.png',
+  './favicon.ico?v=phenologie-4',
+  './favicon.png?v=phenologie-4',
+  './apple-touch-icon.png?v=phenologie-4',
+  './icon-192.png?v=phenologie-4',
+  './icon-512.png?v=phenologie-4'
 ];
 
 self.addEventListener('install', event => {

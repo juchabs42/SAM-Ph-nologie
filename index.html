@@ -5,21 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#D31145">
   <meta name="description" content="SAM Phénologie — suivi des stades phénologiques du pommier par degrés-jours.">
-  <title>SAM phénologie.</title>
+  <title>SAM Phénologie</title>
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="shortcut icon" href="favicon.ico?v=phenologie-3">
-  <link rel="icon" type="image/png" sizes="64x64" href="favicon.png?v=phenologie-3">
-  <link rel="apple-touch-icon" href="icon-192.png?v=phenologie-2">
+  <link rel="shortcut icon" href="favicon.ico?v=phenologie-4">
+  <link rel="icon" type="image/png" sizes="64x64" href="favicon.png?v=phenologie-4">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=phenologie-4">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
-      <div class="brand-logos">
-        <div class="logo-shell">
-          <img src="logo-sudexpe.png" alt="Logo SudExpé" class="brand-logo">
-        </div>
-        <img src="icon-192.png" alt="Icône SAM Phéno" class="sam-app-logo">
+      <div class="logo-shell sud-shell">
+        <img src="logo-sudexpe.png" alt="Logo SudExpé" class="brand-logo">
+      </div>
+      <div class="logo-shell sam-shell">
+        <img src="logo-sam-pheno.png" alt="Logo SAM Phénologie" class="brand-logo app-brand-logo">
       </div>
       <div class="brand-copy">
         <p class="brand-kicker">Sud Agro Météo</p>
@@ -27,30 +27,45 @@
       </div>
     </div>
 
-    <div class="topbar-actions">
-      <button id="installBtn" class="install-button" type="button">Installer</button>
-    </div>
+    <button id="authToggleButton" class="auth-toggle-button mobile-only" type="button" aria-expanded="false" aria-controls="authCard" aria-label="Afficher la connexion">
+      <img src="bouton-connexion.png" alt="" class="auth-toggle-icon" aria-hidden="true">
+    </button>
 
-    <div class="auth-card" aria-label="Connexion">
+    <div id="authCard" class="auth-card" aria-label="Connexion">
+      <p class="auth-card-title mobile-only">Connexion</p>
       <form id="loginForm" class="auth-form">
         <input id="authEmail" type="email" autocomplete="username" placeholder="Adresse mail" aria-label="Adresse mail" required>
         <input id="authPassword" type="password" autocomplete="current-password" placeholder="Mot de passe" aria-label="Mot de passe" required>
         <button id="loginBtn" class="auth-button" type="submit">Connexion</button>
       </form>
-
       <div id="loggedInBox" class="connected-block hidden">
         <div>
-          <span class="connected-label">Connecté</span>
           <strong id="loggedInEmail"></strong>
         </div>
         <button id="logoutBtn" class="logout-button" type="button" title="Se déconnecter" aria-label="Se déconnecter">↪</button>
       </div>
-
       <p id="authStatus" class="auth-message hidden" role="status"></p>
     </div>
   </header>
 
-  <main>
+  <section id="installCard" class="card install-panel mobile-only hidden" aria-label="Installer l'application">
+    <div class="install-panel-header">
+      <div class="install-panel-logo-wrap">
+        <img src="logo-sam-pheno.png" alt="Logo SAM Phénologie" class="install-panel-logo">
+      </div>
+      <div>
+        <p class="eyebrow">Application</p>
+        <h2>Installer l'application</h2>
+        <p class="install-panel-text">Ajoute SAM Phéno sur l’écran d’accueil pour l’utiliser plus facilement sur téléphone.</p>
+      </div>
+    </div>
+    <div class="install-panel-actions">
+      <button id="installButton" class="primary-button install-card-button" type="button">Installer l’application</button>
+    </div>
+    <div id="installMessage" class="install-inline-message hidden" role="status"></div>
+  </section>
+
+<main>
     <section class="card active-card" aria-labelledby="active-title">
       <div class="section-heading">
         <div>

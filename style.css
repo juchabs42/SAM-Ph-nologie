@@ -991,50 +991,183 @@ button, select, input { touch-action: manipulation; }
   .active-actions { grid-template-columns: 1fr; }
 }
 
+/* ===== Bandeau SAM Phénologie aligné sur SAM Tavelure ===== */
+.mobile-only { display: none; }
 
-/* ===== Ajustements bandeau : icône SAM Phéno + installation mobile uniquement ===== */
-.brand-logos {
+.brand {
+  gap: 12px;
+  min-width: 0;
+}
+.logo-shell {
   display: flex;
   align-items: center;
-  gap: 9px;
-  flex: 0 0 auto;
-}
-.sam-app-logo {
-  width: 58px;
-  height: 58px;
-  display: block;
-  object-fit: cover;
-  border-radius: 13px;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 11px;
   background: #fff;
+  flex: none;
+}
+.sud-shell {
+  width: 148px;
+  height: 58px;
+  padding: 7px 9px;
+}
+.sam-shell {
+  width: 62px;
+  height: 58px;
+  padding: 5px;
+}
+.brand-copy {
+  min-width: 0;
+  flex: 1;
+}
+.brand-copy h1 {
+  margin: 2px 0 0;
+  font-size: 1.24rem;
+  line-height: 1.15;
+}
+.app-brand-logo { object-fit: contain; }
+
+.auth-toggle-button {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  min-width: 48px;
+  height: 48px;
+  min-height: 48px;
+  padding: 0;
+  border: 1px solid rgba(255,255,255,.4);
+  border-radius: 12px;
+  background: rgba(255,255,255,.12);
+}
+.auth-toggle-icon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+.auth-card-title {
+  margin: 0 0 8px;
+  color: #fff;
+  font-size: .82rem;
+  font-weight: 800;
+}
+.connected-block strong { color: #fff; font-size: .9rem; }
+.connected-label { display: none; }
+
+.install-panel {
+  margin-top: 10px;
+  padding: 16px;
+}
+.install-panel-header {
+  display: grid;
+  grid-template-columns: 64px minmax(0,1fr);
+  gap: 12px;
+  align-items: center;
+}
+.install-panel-logo-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(211,17,69,.12);
+}
+.install-panel-logo {
+  width: 54px;
+  height: 54px;
+  object-fit: contain;
+}
+.install-panel-text {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+.install-panel-actions {
+  margin-top: 14px;
+}
+.install-card-button {
+  width: 100%;
+}
+.install-inline-message {
+  margin-top: 10px;
+  font-size: .84rem;
+  color: var(--muted);
+}
+.install-inline-message:not(.hidden) { display: block; }
+
+@media (min-width: 721px) {
+  #installCard { display: none !important; }
 }
 
-/* Le bouton Installer est invisible sur ordinateur, même si le JavaScript l'active. */
-.install-button {
-  display: none;
+@media (max-width: 980px) {
+  .brand-copy h1 { font-size: 1.1rem; }
 }
 
 @media (max-width: 720px) {
-  .brand-logos { gap: 7px; }
-  .sam-app-logo {
+  .mobile-only { display: inline-flex; }
+  .topbar {
+    position: static;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px 10px;
+    padding: calc(9px + env(safe-area-inset-top)) 10px 10px;
+  }
+  .brand {
+    min-width: 0;
+    gap: 8px;
+  }
+  .sud-shell {
+    width: 102px;
+    height: 46px;
+    padding: 6px 8px;
+  }
+  .sam-shell {
     width: 46px;
     height: 46px;
-    border-radius: 11px;
+    padding: 4px;
   }
-  .install-button:not(.hidden) {
+  .brand-kicker { display: none; }
+  .brand-copy h1 {
+    margin: 0;
+    font-size: .94rem;
+    line-height: 1.15;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    max-width: 150px;
+  }
+  .auth-toggle-button {
     display: inline-flex;
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .auth-card {
+    grid-column: 1 / -1;
+    width: 100%;
+    margin: 0;
+    padding: 8px;
+    display: none;
+  }
+  .auth-card.is-open { display: block; }
+  .auth-form {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+  .auth-card input,
+  .auth-button,
+  .logout-button {
+    min-height: 46px;
+    font-size: 16px;
+  }
+  .connected-block {
     align-items: center;
-    justify-content: center;
   }
-}
-
-@media (max-width: 520px) {
-  .logo-shell {
-    width: 94px;
-    height: 44px;
-    flex: 0 0 94px;
+  .connected-block strong {
+    max-width: calc(100vw - 92px);
+    overflow-wrap: anywhere;
   }
-  .sam-app-logo {
-    width: 44px;
-    height: 44px;
-  }
+  #installCard.mobile-only { display: block; }
 }

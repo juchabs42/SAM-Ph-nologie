@@ -104,6 +104,7 @@ async function init() {
   populateVarieties();
   populateStages();
   bindEvents();
+  initAuthToggle();
   initInstallButton();
   normalizeState();
   registerServiceWorker();
@@ -130,7 +131,7 @@ function bindElements() {
     'stageHistoryStatus','stageHistoryWrap','stageHistoryBody',
     'chartCurrentGdd','chartNextThreshold','chartForecastEnd','gddChartStatus','gddChart','chartWrap','chartTooltip',
     'toast','importStagesBtn','importStagesBtnTop','importStagesInput',
-    'loginForm','loggedInBox','loggedInEmail','authEmail','authPassword','loginBtn','logoutBtn','authStatus','installBtn'
+    'loginForm','loggedInBox','loggedInEmail','authEmail','authPassword','loginBtn','logoutBtn','authStatus','authToggleButton','authCard','installCard','installButton','installMessage'
   ].forEach(id => els[id] = document.getElementById(id));
 }
 
@@ -171,7 +172,42 @@ function bindEvents() {
     loginSupabase();
   });
   els.logoutBtn.addEventListener('click', logoutSupabase);
-  window.addEventListener('resize', () => drawChart());
+  if (els.authToggleButton) {
+    els.authToggleButton.addEventListener('click', toggleAuthCard);
+  }
+  window.addEventListener('resize', () => {
+    drawChart();
+    syncMobileUi();
+  });
+}
+
+function isPhoneLayout() {
+  return window.matchMedia('(max-width: 720px)').matches;
+}
+
+function syncMobileUi() {
+  if (!els.authCard || !els.authToggleButton) return;
+  if (isPhoneLayout()) {
+    const open = els.authCard.classList.contains('is-open');
+    els.authToggleButton.classList.remove('hidden');
+    els.authToggleButton.setAttribute('aria-expanded', String(open));
+    if (!open) els.authCard.classList.remove('is-open');
+  } else {
+    els.authCard.classList.remove('is-open');
+    els.authCard.style.display = '';
+    els.authToggleButton.classList.add('hidden');
+    els.authToggleButton.setAttribute('aria-expanded', 'false');
+  }
+}
+
+function toggleAuthCard() {
+  if (!els.authCard || !isPhoneLayout()) return;
+  const open = els.authCard.classList.toggle('is-open');
+  els.authToggleButton.setAttribute('aria-expanded', String(open));
+}
+
+function initAuthToggle() {
+  syncMobileUi();
 }
 
 function toggleInfo(id) {
@@ -944,24 +980,38 @@ function isIosDevice() {
 }
 
 function initInstallButton() {
-  if (!els.installBtn) return;
+  if (!els.installCard || !els.installButton || !els.installMessage) return;
 
-  if (isStandaloneApp()) {
-    els.installBtn.classList.add('hidden');
-    return;
-  }
+  const showMessage = (text) => {
+    if (!text) {
+      els.installMessage.textContent = '';
+      els.installMessage.classList.add('hidden');
+      return;
+    }
+    els.installMessage.textContent = text;
+    els.installMessage.classList.remove('hidden');
+  };
 
-  els.installBtn.classList.remove('hidden');
+  const updateInstallVisibility = () => {
+    if (isStandaloneApp() || !isPhoneLayout()) {
+      els.installCard.classList.add('hidden');
+    } else {
+      els.installCard.classList.remove('hidden');
+    }
+  };
+
+  updateInstallVisibility();
+  window.addEventListener('resize', updateInstallVisibility);
 
   window.addEventListener('beforeinstallprompt', event => {
     event.preventDefault();
     deferredPrompt = event;
-    els.installBtn.classList.remove('hidden');
+    updateInstallVisibility();
   });
 
-  els.installBtn.addEventListener('click', async () => {
+  els.installButton.addEventListener('click', async () => {
     if (isStandaloneApp()) {
-      els.installBtn.classList.add('hidden');
+      els.installCard.classList.add('hidden');
       return;
     }
 
@@ -970,24 +1020,24 @@ function initInstallButton() {
       const { outcome } = await deferredPrompt.userChoice;
       deferredPrompt = null;
       if (outcome === 'accepted') {
-        els.installBtn.classList.add('hidden');
-        toast('Installation de SAM Phéno. lancée.', 3000);
+        showMessage('Installation lancée…');
       }
       return;
     }
 
     if (isIosDevice()) {
-      toast('Sur iPhone : Safari → Partager → Sur l’écran d’accueil.', 5500);
+      showMessage('Sur iPhone : Safari → Partager → Sur l’écran d’accueil.');
       return;
     }
 
-    toast('Dans le menu du navigateur, choisissez « Installer l’application » ou « Ajouter à l’écran d’accueil ».', 5500);
+    showMessage('Dans le menu du navigateur, choisissez « Installer l’application » ou « Ajouter à l’écran d’accueil ».');
   });
 
   window.addEventListener('appinstalled', () => {
     deferredPrompt = null;
-    els.installBtn.classList.add('hidden');
-    toast('SAM Phéno. est installée.', 3000);
+    els.installCard.classList.add('hidden');
+    showMessage('');
+    toast('SAM Phéno est installée.', 3000);
   });
 }
 
@@ -1185,7 +1235,7 @@ function setEditMode() {
 
   if (els.loginForm) els.loginForm.classList.toggle('hidden', isAdmin);
   if (els.loggedInBox) els.loggedInBox.classList.toggle('hidden', !isAdmin);
-  if (els.loggedInEmail) els.loggedInEmail.textContent = isAdmin ? (supabaseClient?.auth?.getUser ? 'Connecté' : 'Connecté') : '—';
+  if (els.loggedInEmail) els.loggedInEmail.textContent = isAdmin ? 'Connecté' : '—';
   if (isAdmin && supabaseClient) {
     supabaseClient.auth.getUser().then(({ data }) => {
       if (els.loggedInEmail) els.loggedInEmail.textContent = data?.user?.email || 'Connecté';
@@ -1202,11 +1252,9 @@ function setEditMode() {
   }
 
   if (els.authStatus) {
-    els.authStatus.textContent = supabaseConfigured
-      ? (supabaseClient
-          ? (isAdmin ? 'Connecté · mode édition' : 'Lecture seule')
-          : 'Connexion indisponible')
-      : 'Connexion indisponible';
+    const message = supabaseConfigured ? '' : 'Connexion indisponible';
+    els.authStatus.textContent = message;
+    els.authStatus.classList.toggle('hidden', !message);
   }
   renderObservations();
 }
@@ -1241,6 +1289,7 @@ async function loginSupabase() {
   loadParcelIntoForm();
   loadCachedWeather();
   await refreshWeather(false);
+  if (els.authCard && isPhoneLayout()) { els.authCard.classList.remove('is-open'); els.authToggleButton?.setAttribute('aria-expanded', 'false'); }
   toast('Mode édition activé.');
 }
 
@@ -1251,6 +1300,7 @@ async function logoutSupabase() {
   setEditMode();
   els.authEmail.value = '';
   els.authPassword.value = '';
+  if (els.authCard && isPhoneLayout()) { els.authCard.classList.remove('is-open'); els.authToggleButton?.setAttribute('aria-expanded', 'false'); }
   toast('Déconnecté.');
 }
 
