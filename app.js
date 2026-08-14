@@ -188,12 +188,12 @@ function isPhoneLayout() {
 function syncMobileUi() {
   if (!els.authCard || !els.authToggleButton) return;
   if (isPhoneLayout()) {
-    const open = els.authCard.classList.contains('is-open');
+    const open = els.authCard.classList.contains('open');
     els.authToggleButton.classList.remove('hidden');
     els.authToggleButton.setAttribute('aria-expanded', String(open));
-    if (!open) els.authCard.classList.remove('is-open');
+    if (!open) els.authCard.classList.remove('open');
   } else {
-    els.authCard.classList.remove('is-open');
+    els.authCard.classList.remove('open');
     els.authCard.style.display = '';
     els.authToggleButton.classList.add('hidden');
     els.authToggleButton.setAttribute('aria-expanded', 'false');
@@ -202,7 +202,7 @@ function syncMobileUi() {
 
 function toggleAuthCard() {
   if (!els.authCard || !isPhoneLayout()) return;
-  const open = els.authCard.classList.toggle('is-open');
+  const open = els.authCard.classList.toggle('open');
   els.authToggleButton.setAttribute('aria-expanded', String(open));
 }
 
@@ -1289,7 +1289,7 @@ async function loginSupabase() {
   loadParcelIntoForm();
   loadCachedWeather();
   await refreshWeather(false);
-  if (els.authCard && isPhoneLayout()) { els.authCard.classList.remove('is-open'); els.authToggleButton?.setAttribute('aria-expanded', 'false'); }
+  if (els.authCard && isPhoneLayout()) { els.authCard.classList.remove('open'); els.authToggleButton?.setAttribute('aria-expanded', 'false'); }
   toast('Mode édition activé.');
 }
 
@@ -1300,7 +1300,7 @@ async function logoutSupabase() {
   setEditMode();
   els.authEmail.value = '';
   els.authPassword.value = '';
-  if (els.authCard && isPhoneLayout()) { els.authCard.classList.remove('is-open'); els.authToggleButton?.setAttribute('aria-expanded', 'false'); }
+  if (els.authCard && isPhoneLayout()) { els.authCard.classList.remove('open'); els.authToggleButton?.setAttribute('aria-expanded', 'false'); }
   toast('Déconnecté.');
 }
 
