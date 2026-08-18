@@ -1,6 +1,6 @@
 'use strict';
 
-const VERSION = '3.0';
+const VERSION = '3.1';
 const STORAGE_KEY = 'sam-phenologie-v2.7';
 const LEGACY_STORAGE_KEYS = ['sam-phenologie-v2.6', 'sam-phenologie-v2.5', 'sam-phenologie-v2.4', 'sam-phenologie-v2.3', 'sam-phenologie-v1'];
 const WEATHER_CACHE_KEY = 'sam-phenologie-weather-v2.7';
@@ -753,30 +753,120 @@ function analyzeParcel(parcel, weather) {
       return observationTargetGdd(a, stages) - observationTargetGdd(b, stages);
     });
 
-  // Recalibrage séquentiel : une observation ne modifie jamais les jours antérieurs.
-  // À sa date, la courbe est ancrée sur le niveau thermique correspondant puis
-  // les DJ météo s'accumulent à nouveau à partir de cet ancrage.
-  const anchorsByDate = new Map();
-  observations.forEach(obs => {
-    if (obs.date < start) return;
-    if (!anchorsByDate.has(obs.date)) anchorsByDate.set(obs.date, []);
-    anchorsByDate.get(obs.date).push(obs);
+  // 1) Courbe thermique brute issue uniquement de la météo.
+  let rawCumulative = 0;
+  const rawTimeline = filtered.map(day => {
+    const gdd = computeGdd(day.min, day.max, baseTemp);
+    rawCumulative += gdd;
+    return { ...day, gdd, rawCumulative };
   });
 
-  let cumulative = 0;
-  const timeline = filtered.map(day => {
-    const gdd = computeGdd(day.min, day.max, baseTemp);
-    cumulative += gdd;
-    const anchors = anchorsByDate.get(day.date) || [];
-    let appliedAnchor = null;
-    anchors.forEach(obs => {
-      const target = observationTargetGdd(obs, stages);
-      if (target == null) return;
-      cumulative = Math.max(0, target);
-      appliedAnchor = { observation: obs, target };
-    });
-    return { ...day, gdd, cumulative, appliedAnchor };
+  // 2) Les observations deviennent des points d'ancrage fixes.
+  // Si plusieurs observations existent le même jour, le 50 % est prioritaire
+  // pour l'ancrage de la courbe (une courbe ne peut pas passer par deux Y différents
+  // pour une même date). Toutes les observations restent néanmoins affichées/exportées.
+  const anchorsByDate = new Map();
+  observations.forEach(obs => {
+    const pointIndex = rawTimeline.findIndex(day => day.date === obs.date);
+    if (pointIndex < 0) return;
+    const target = observationTargetGdd(obs, stages);
+    if (target == null) return;
+    const candidate = {
+      date: obs.date,
+      target,
+      raw: rawTimeline[pointIndex].rawCumulative,
+      index: pointIndex,
+      observation: obs
+    };
+    const existing = anchorsByDate.get(obs.date);
+    if (!existing) {
+      anchorsByDate.set(obs.date, candidate);
+      return;
+    }
+    const candidatePct = Number(obs.percentage || 50);
+    const existingPct = Number(existing.observation.percentage || 50);
+    if (candidatePct === 50 || (existingPct !== 50 && Math.abs(candidatePct - 50) < Math.abs(existingPct - 50))) {
+      anchorsByDate.set(obs.date, candidate);
+    }
   });
+
+  const anchors = [...anchorsByDate.values()].sort((a, b) => a.index - b.index);
+  const adjusted = new Array(rawTimeline.length).fill(null);
+
+  // Avant le premier point observé : on recalcule les estimations pour rejoindre
+  // exactement ce premier point, puisqu'aucun stade antérieur n'est encore verrouillé.
+  if (anchors.length) {
+    const first = anchors[0];
+    if (first.index === 0) {
+      adjusted[0] = Math.max(0, first.target);
+    } else if (first.raw > 0 && first.target > 0) {
+      const factor = first.target / first.raw;
+      for (let i = 0; i <= first.index; i++) {
+        adjusted[i] = Math.max(0, rawTimeline[i].rawCumulative * factor);
+      }
+      adjusted[first.index] = Math.max(0, first.target);
+    } else {
+      // Cas typique du stade C à 50 % (seuil 0 DJ) : on conserve la forme brute
+      // puis on translate progressivement jusqu'au point observé sans passer sous 0.
+      const rawAtAnchor = first.raw;
+      for (let i = 0; i <= first.index; i++) {
+        const progress = first.index ? i / first.index : 1;
+        const correction = (first.target - rawAtAnchor) * progress;
+        adjusted[i] = Math.max(0, rawTimeline[i].rawCumulative + correction);
+      }
+      adjusted[first.index] = Math.max(0, first.target);
+    }
+
+    // Entre deux observations : interpolation recalibrée. Les deux points observés
+    // restent strictement fixes et seules les estimations situées entre eux bougent.
+    for (let a = 0; a < anchors.length - 1; a++) {
+      const left = anchors[a];
+      const right = anchors[a + 1];
+      const rawSpan = right.raw - left.raw;
+      const targetSpan = right.target - left.target;
+      const indexSpan = Math.max(1, right.index - left.index);
+
+      adjusted[left.index] = Math.max(0, left.target);
+      for (let i = left.index + 1; i < right.index; i++) {
+        let fraction;
+        if (rawSpan > 0) {
+          fraction = (rawTimeline[i].rawCumulative - left.raw) / rawSpan;
+        } else {
+          fraction = (i - left.index) / indexSpan;
+        }
+        fraction = Math.max(0, Math.min(1, fraction));
+        adjusted[i] = Math.max(0, left.target + targetSpan * fraction);
+      }
+      adjusted[right.index] = Math.max(0, right.target);
+    }
+
+    // Après le dernier point observé : on prolonge avec le rythme de calibration
+    // du segment observé le plus récent. S'il n'existe pas encore de segment fiable,
+    // on reprend une accumulation 1:1 à partir du dernier point fixe.
+    const last = anchors[anchors.length - 1];
+    let futureFactor = 1;
+    for (let a = anchors.length - 2; a >= 0; a--) {
+      const prev = anchors[a];
+      const rawSpan = last.raw - prev.raw;
+      const targetSpan = last.target - prev.target;
+      if (rawSpan > 0 && targetSpan > 0) {
+        futureFactor = targetSpan / rawSpan;
+        break;
+      }
+    }
+    for (let i = last.index + 1; i < rawTimeline.length; i++) {
+      adjusted[i] = Math.max(0, last.target + (rawTimeline[i].rawCumulative - last.raw) * futureFactor);
+    }
+  } else {
+    // Aucun point terrain : courbe météo brute.
+    rawTimeline.forEach((day, i) => { adjusted[i] = day.rawCumulative; });
+  }
+
+  const timeline = rawTimeline.map((day, i) => ({
+    ...day,
+    cumulative: adjusted[i] == null ? day.rawCumulative : adjusted[i],
+    isObservedAnchor: anchors.some(anchor => anchor.index === i)
+  }));
 
   const observedFinalDate = observations.find(o => o.stage === lastStage.id && Number(o.percentage || 50) === 50)?.date || null;
   const estimatedFinalDate = timeline.find(d => d.cumulative >= lastStage.gdd)?.date || null;
@@ -801,10 +891,12 @@ function analyzeParcel(parcel, weather) {
   const nextStageDate = nextStage ? truncatedTimeline.find(d => d.cumulative >= nextStage.gdd)?.date || null : null;
   const forecastEnd = truncatedTimeline[truncatedTimeline.length - 1]?.date || null;
 
-  const latestObs = observations.filter(o => truncatedTimeline.some(d => d.date === o.date)).slice(-1)[0] || null;
   let notice = '';
-  if (latestObs) {
-    notice = `Estimation recalée à partir du ${formatDate(latestObs.date)} (${latestObs.percentage || 50} % · ${stageById(latestObs.stage).label}).`;
+  if (anchors.length === 1) {
+    const obs = anchors[0].observation;
+    notice = `Estimation recalée sur l’observation du ${formatDate(obs.date)} (${obs.percentage || 50} % · ${stageById(obs.stage).label}).`;
+  } else if (anchors.length > 1) {
+    notice = `Courbe recalée sur ${anchors.length} points observés. Les points observés restent fixes et les estimations intermédiaires sont recalculées.`;
   }
 
   return {
@@ -815,6 +907,7 @@ function analyzeParcel(parcel, weather) {
     baseTemp,
     start,
     observations,
+    anchors,
     timeline: truncatedTimeline,
     stageDates,
     currentEntry,
@@ -931,21 +1024,6 @@ function drawChart() {
   drawLine(ctx, hist, x, y, '#E3084D', false);
   drawLine(ctx, forecast, x, y, '#978AA1', true, hist[hist.length - 1]);
 
-  latestAnalysis.observations.forEach(obs => {
-    const point = data.find(d => d.date === obs.date);
-    const target = observationTargetGdd(obs, latestAnalysis.stages);
-    if (!point || target == null) return;
-    ctx.save();
-    ctx.fillStyle = '#D31145';
-    ctx.strokeStyle = '#FFFFFF';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(x(obs.date), y(target), 5.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
-  });
-
   const ticks = [data[0], data[Math.floor(data.length / 2)], data[data.length - 1]].filter(Boolean);
   ctx.fillStyle = '#666';
   ctx.font = '12px sans-serif';
@@ -957,6 +1035,24 @@ function drawChart() {
   });
   ctx.strokeStyle = '#999';
   ctx.beginPath(); ctx.moveTo(margin.left, margin.top); ctx.lineTo(margin.left, height - margin.bottom); ctx.lineTo(width - margin.right, height - margin.bottom); ctx.stroke();
+
+  // Points terrain dessinés en dernier pour rester visibles au-dessus des axes et de la courbe.
+  latestAnalysis.observations.forEach(obs => {
+    const point = data.find(d => d.date === obs.date);
+    const target = observationTargetGdd(obs, latestAnalysis.stages);
+    if (!point || target == null) return;
+    ctx.save();
+    ctx.fillStyle = '#D31145';
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 2.5;
+    ctx.shadowColor = 'rgba(80, 0, 24, .22)';
+    ctx.shadowBlur = 4;
+    ctx.beginPath();
+    ctx.arc(x(obs.date), y(target), 6.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  });
 
   chartHoverState = { data, x, y, width, height, margin, analysis: latestAnalysis };
 }

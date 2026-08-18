@@ -1,4 +1,4 @@
-const CACHE = 'sam-pheno-phenology-observations-1';
+const CACHE = 'sam-pheno-phenology-observations-2';
 const ASSETS = [
   './',
   './index.html',
