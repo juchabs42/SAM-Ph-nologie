@@ -168,12 +168,6 @@
         </div>
         <div id="baseTempInfo" class="info-box hidden"><span id="baseTempInfoText">La température de base est le seuil sous lequel le développement du pommier est considéré comme très faible. La valeur de 5 °C est utilisée pour calculer simplement l’accumulation de chaleur depuis le stade C.</span></div>
 
-        <div class="grid two">
-          <label>Date du stade C observé
-            <input id="stageCDate" data-editable type="date">
-          </label>
-        </div>
-
         <div class="actions admin-actions">
           <button id="saveParcelBtn" data-editable type="button">Enregistrer les modifications</button>
           <button id="deleteParcelBtn" data-editable class="danger" type="button">Supprimer</button>
@@ -203,15 +197,20 @@
             <p class="eyebrow">Terrain</p>
             <h2 id="observation-title">Ajouter une observation</h2>
           </div>
-          <button id="importStagesBtn" data-editable class="secondary" type="button">Importer le tableau des stades</button>
         </div>
-        <input id="importStagesInput" data-editable type="file" accept=".csv,.txt,.tsv" class="hidden">
         <div class="grid observation-grid admin-entry">
           <label>Date
             <input id="observationDate" data-editable type="date">
           </label>
           <label>Stade observé
             <select id="observationStage" data-editable></select>
+          </label>
+          <label>Pourcentage de bourgeons atteints
+            <select id="observationPercentage" data-editable>
+              <option value="25">25 %</option>
+              <option value="50" selected>50 % — stade atteint</option>
+              <option value="75">75 %</option>
+            </select>
           </label>
           <button id="addObservationBtn" data-editable class="align-end" type="button">Ajouter</button>
         </div>
@@ -244,7 +243,7 @@
             <p class="eyebrow">Chronologie</p>
             <h2 id="stage-history-title">Dates de passage des stades</h2>
           </div>
-          <button id="importStagesBtnTop" data-editable class="secondary" type="button">Importer le tableau des stades</button>
+          <button id="exportStagesBtn" class="secondary" type="button">Exporter le tableau des stades</button>
         </div>
         <p class="hint">Les dates observées sont prioritaires. Les autres dates sont estimées à partir du cumul de degrés-jours recalé.</p>
         <div id="stageHistoryStatus" class="loading-state">Aucune donnée chargée.</div>

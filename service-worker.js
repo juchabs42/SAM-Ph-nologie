@@ -1,4 +1,4 @@
-const CACHE = 'sam-pheno-mobile-install-2';
+const CACHE = 'sam-pheno-phenology-observations-1';
 const ASSETS = [
   './',
   './index.html',

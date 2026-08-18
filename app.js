@@ -122,15 +122,15 @@ function bindElements() {
   [
     'exploitationSelect','parcelSelect','activeVariety','activeWeatherLocation','activeStart','dataModeBadge',
     'dashboardTabBtn','historyTabBtn','dashboardView','historyView',
-    'exploitation','parcelName','variety','otherVarietyField','otherVarietyName','stageCDate','baseTemp','varietyInfoText','baseTempInfoText','modelDescription',
+    'exploitation','parcelName','variety','otherVarietyField','otherVarietyName','baseTemp','varietyInfoText','baseTempInfoText','modelDescription',
     'locationSearch','searchLocationBtn','locationResults','selectedLocation','editStatus','configPanel','configurationBtn','closeConfigBtn','configEyebrow',
     'saveParcelBtn','newParcelBtn','deleteParcelBtn',
     'stageMain','stageBbch','gddTotal','nextStage','nextDate','calibrationNotice',
-    'alertsSection','alertsList','observationDate','observationStage','addObservationBtn','observationsList',
+    'alertsSection','alertsList','observationDate','observationStage','observationPercentage','addObservationBtn','observationsList',
     'refreshBtn','weatherStatus','forecastTableWrap','forecastBody',
     'stageHistoryStatus','stageHistoryWrap','stageHistoryBody',
     'chartCurrentGdd','chartNextThreshold','chartForecastEnd','gddChartStatus','gddChart','chartWrap','chartTooltip',
-    'toast','importStagesBtn','importStagesBtnTop','importStagesInput',
+    'toast','exportStagesBtn',
     'loginForm','loggedInBox','loggedInEmail','authEmail','authPassword','loginBtn','logoutBtn','authStatus','authToggleButton','authCard','installCard','installButton','installMessage'
   ].forEach(id => els[id] = document.getElementById(id));
 }
@@ -155,10 +155,8 @@ function bindEvents() {
   els.refreshBtn.addEventListener('click', () => refreshWeather(true));
   els.dashboardTabBtn.addEventListener('click', () => switchTab('dashboard'));
   els.historyTabBtn.addEventListener('click', () => switchTab('history'));
+  els.exportStagesBtn.addEventListener('click', exportStageTable);
   [...document.querySelectorAll('.info-btn')].forEach(btn => btn.addEventListener('click', () => toggleInfo(btn.dataset.info)));
-  els.importStagesBtn.addEventListener('click', () => els.importStagesInput.click());
-  els.importStagesBtnTop.addEventListener('click', () => els.importStagesInput.click());
-  els.importStagesInput.addEventListener('change', handleImportFile);
   els.variety.addEventListener('change', () => updateModelUi(true));
   els.searchLocationBtn.addEventListener('click', searchLocations);
   els.locationSearch.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); searchLocations(); } });
@@ -249,7 +247,6 @@ function normalizeState() {
     if (p.variety === 'opale') p.variety = 'opal';
     p.variety = p.variety || 'other';
     p.customVarietyName = p.customVarietyName || '';
-    p.stageCDate = p.stageCDate || '';
     const model = getModelForVariety(p.variety);
     p.baseTemp = model.fixedBase ? model.baseTemp : (typeof p.baseTemp === 'number' ? p.baseTemp : DEFAULT_BASE_TEMP);
     p.weatherLocation = normalizeLocation(p.weatherLocation || DEFAULT_LOCATION);
@@ -307,7 +304,6 @@ function loadParcelIntoForm() {
     els.parcelName.value = '';
     els.variety.value = 'gala';
     els.otherVarietyName.value = '';
-    els.stageCDate.value = '';
     els.baseTemp.value = MODEL_CONFIG.gala.baseTemp;
     els.activeVariety.textContent = '—';
     els.activeWeatherLocation.textContent = '—';
@@ -325,7 +321,6 @@ function loadParcelIntoForm() {
   els.parcelName.value = p.name || '';
   els.variety.value = p.variety || 'other';
   els.otherVarietyName.value = p.customVarietyName || '';
-  els.stageCDate.value = p.stageCDate || '';
   els.baseTemp.value = p.baseTemp ?? getModelForVariety(p.variety).baseTemp;
   pendingLocation = normalizeLocation(p.weatherLocation || DEFAULT_LOCATION);
   renderSelectedLocation();
@@ -370,7 +365,8 @@ function updateActiveSummary() {
   const loc = normalizeLocation(p.weatherLocation || DEFAULT_LOCATION);
   els.activeVariety.textContent = variety;
   els.activeWeatherLocation.textContent = locationLabel(loc);
-  els.activeStart.textContent = p.stageCDate ? `Stade C observé le ${formatDate(p.stageCDate)}` : 'Stade C non renseigné';
+  const stageCDate = getReachedStageCDate(p);
+  els.activeStart.textContent = stageCDate ? `Stade C observé le ${formatDate(stageCDate)}` : 'Stade C non renseigné';
 }
 
 async function saveParcelFromForm() {
@@ -393,7 +389,6 @@ async function saveParcelFromForm() {
     name,
     variety,
     customVarietyName,
-    stageCDate: els.stageCDate.value,
     weatherLocation: normalizeLocation(pendingLocation || DEFAULT_LOCATION),
     baseTemp: model.fixedBase ? model.baseTemp : clampNumber(parseFloat(els.baseTemp.value), 0, 15, DEFAULT_BASE_TEMP),
     observations: current?.observations || []
@@ -431,7 +426,6 @@ function openNewParcel() {
   els.parcelName.value = '';
   els.variety.value = 'gala';
   els.otherVarietyName.value = '';
-  els.stageCDate.value = '';
   pendingLocation = { ...DEFAULT_LOCATION };
   els.locationSearch.value = '';
   els.locationResults.classList.add('hidden');
@@ -481,46 +475,84 @@ async function addObservation() {
   if (!p) return toast('Aucune parcelle active.');
   const date = els.observationDate.value;
   const stage = els.observationStage.value;
+  const percentage = Number(els.observationPercentage.value || 50);
   if (!date) return toast('Choisissez une date.');
+  if (![25, 50, 75].includes(percentage)) return toast('Pourcentage invalide.');
 
-  const obsSaved = await syncObservationToSupabase(p.id, { date, stage });
+  const obsSaved = await syncObservationToSupabase(p.id, { date, stage, percentage });
   if (!obsSaved) return;
-  if (stage === 'C') {
-    const updatedParcel = { ...p, stageCDate: date };
-    const parcelSaved = await syncParcelToSupabase(updatedParcel);
-    if (!parcelSaved) return;
-  }
   await loadRemoteData();
   renderExploitationSelect();
   renderParcelSelect();
   loadParcelIntoForm();
+  loadCachedWeather();
+  await refreshWeather(true);
   toast('Observation ajoutée.');
 }
 
-async function removeObservation(date) {
+async function removeObservation(id) {
   if (!canEdit()) return toast('Connexion nécessaire pour supprimer une observation.');
   const p = activeParcel();
-  if (!p) return;
-  const { error } = await supabaseClient.from('observations').delete().eq('parcel_id', p.id).eq('obs_date', date);
+  if (!p || !id) return;
+  const { error } = await supabaseClient.from('observations').delete().eq('id', id).eq('parcel_id', p.id);
   if (error) return toast(`Suppression impossible : ${error.message}`);
   await loadRemoteData();
   renderExploitationSelect();
   renderParcelSelect();
   loadParcelIntoForm();
+  loadCachedWeather();
+  await refreshWeather(true);
 }
 
 function renderObservations() {
   const p = activeParcel();
-  const obs = [...(p?.observations || [])].sort((a, b) => b.date.localeCompare(a.date));
+  const obs = [...(p?.observations || [])].sort((a, b) => {
+    const byDate = b.date.localeCompare(a.date);
+    if (byDate) return byDate;
+    return (b.percentage || 50) - (a.percentage || 50);
+  });
   const editable = canEdit();
   els.observationsList.innerHTML = obs.length ? obs.map(o => {
-    const s = stageById(o.stage);
-    const del = editable ? `<button type="button" data-date="${o.date}" aria-label="Supprimer">✕</button>` : '<span></span>';
-    return `<div class="observation-row"><span>${formatDate(o.date)}</span><strong>${s ? s.label : escapeHtml(o.stage)}</strong>${del}</div>`;
+    const stage = stageById(o.stage);
+    const percentage = Number(o.percentage || 50);
+    const del = editable ? `<button type="button" data-id="${o.id}" aria-label="Supprimer">✕</button>` : '<span></span>';
+    return `<div class="observation-row"><span>${formatDate(o.date)}</span><strong>${percentage} % · ${stage ? stage.label : escapeHtml(o.stage)}</strong>${del}</div>`;
   }).join('') : '<p class="hint">Aucune observation enregistrée.</p>';
-  if (editable) els.observationsList.querySelectorAll('button[data-date]').forEach(btn => btn.addEventListener('click', () => removeObservation(btn.dataset.date)));
+  if (editable) {
+    els.observationsList.querySelectorAll('button[data-id]').forEach(btn => btn.addEventListener('click', () => removeObservation(btn.dataset.id)));
+  }
 }
 
+function getReachedStageCDate(parcel) {
+  const observation = [...(parcel?.observations || [])]
+    .filter(o => o.stage === 'C' && Number(o.percentage || 50) === 50)
+    .sort((a, b) => a.date.localeCompare(b.date))[0];
+  return observation?.date || null;
+}
+
+function getThermalStartDate(parcel) {
+  const firstCObservation = [...(parcel?.observations || [])]
+    .filter(o => o.stage === 'C')
+    .sort((a, b) => a.date.localeCompare(b.date))[0];
+  return firstCObservation?.date || null;
+}
+
+function observationTargetGdd(observation, stages) {
+  const index = stages.findIndex(stage => stage.id === observation.stage);
+  if (index < 0) return null;
+  const percentage = Number(observation.percentage || 50);
+  const current = stages[index].gdd;
+  if (percentage === 50) return current;
+  if (percentage === 25) {
+    if (index === 0) return current;
+    return stages[index - 1].gdd + (current - stages[index - 1].gdd) * 0.5;
+  }
+  if (percentage === 75) {
+    if (index === stages.length - 1) return current;
+    return current + (stages[index + 1].gdd - current) * 0.5;
+  }
+  return current;
+}
 
 function normalizeLocation(location) {
   const source = location || DEFAULT_LOCATION;
@@ -604,7 +636,7 @@ async function refreshWeather(force) {
   }
 
   const currentYear = new Date().getFullYear();
-  const start = p.stageCDate || `${currentYear}${FALLBACK_START}`;
+  const start = getThermalStartDate(p) || `${currentYear}${FALLBACK_START}`;
   const historyEnd = isoDate(addDays(new Date(), -1));
   const today = isoDate(new Date());
   els.weatherStatus.textContent = `Chargement des données Open-Meteo pour ${loc.name}…`;
@@ -709,44 +741,53 @@ function analyzeParcel(parcel, weather) {
   const model = getModelForVariety(parcel.variety);
   const stages = stagesForModel(model);
   const lastStage = stages[stages.length - 1];
-  const start = parcel.stageCDate || `${new Date().getFullYear()}${FALLBACK_START}`;
+  const start = getThermalStartDate(parcel) || `${new Date().getFullYear()}${FALLBACK_START}`;
   const baseTemp = model.fixedBase ? model.baseTemp : clampNumber(Number(parcel.baseTemp), 0, 15, DEFAULT_BASE_TEMP);
   const filtered = weather.filter(w => w.date >= start);
-  let cumulativeRaw = 0;
-  const rawTimeline = filtered.map(day => {
-    const gdd = computeGdd(day.min, day.max, baseTemp);
-    cumulativeRaw += gdd;
-    return { ...day, gdd, rawCumulative: cumulativeRaw };
-  });
 
   const observations = [...(parcel.observations || [])]
-    .filter(o => stageById(o.stage))
-    .sort((a, b) => a.date.localeCompare(b.date));
-  const effectiveStartObs = observations.find(o => o.stage === 'C') || null;
-  const latestObs = observations.filter(o => rawTimeline.some(d => d.date === o.date)).slice(-1)[0] || null;
+    .filter(o => stageById(o.stage) && [25, 50, 75].includes(Number(o.percentage || 50)))
+    .sort((a, b) => {
+      const byDate = a.date.localeCompare(b.date);
+      if (byDate) return byDate;
+      return observationTargetGdd(a, stages) - observationTargetGdd(b, stages);
+    });
 
-  let offset = 0;
-  if (latestObs) {
-    const stage = stages.find(item => item.id === latestObs.stage);
-    const rawAtObs = rawTimeline.find(d => d.date === latestObs.date)?.rawCumulative ?? 0;
-    if (stage) offset = stage.gdd - rawAtObs;
-  }
+  // Recalibrage séquentiel : une observation ne modifie jamais les jours antérieurs.
+  // À sa date, la courbe est ancrée sur le niveau thermique correspondant puis
+  // les DJ météo s'accumulent à nouveau à partir de cet ancrage.
+  const anchorsByDate = new Map();
+  observations.forEach(obs => {
+    if (obs.date < start) return;
+    if (!anchorsByDate.has(obs.date)) anchorsByDate.set(obs.date, []);
+    anchorsByDate.get(obs.date).push(obs);
+  });
 
-  const timeline = rawTimeline.map(day => ({
-    ...day,
-    cumulative: Math.max(0, day.rawCumulative + offset)
-  }));
+  let cumulative = 0;
+  const timeline = filtered.map(day => {
+    const gdd = computeGdd(day.min, day.max, baseTemp);
+    cumulative += gdd;
+    const anchors = anchorsByDate.get(day.date) || [];
+    let appliedAnchor = null;
+    anchors.forEach(obs => {
+      const target = observationTargetGdd(obs, stages);
+      if (target == null) return;
+      cumulative = Math.max(0, target);
+      appliedAnchor = { observation: obs, target };
+    });
+    return { ...day, gdd, cumulative, appliedAnchor };
+  });
 
-  const observedFinalDate = observations.find(o => o.stage === lastStage.id)?.date || null;
+  const observedFinalDate = observations.find(o => o.stage === lastStage.id && Number(o.percentage || 50) === 50)?.date || null;
   const estimatedFinalDate = timeline.find(d => d.cumulative >= lastStage.gdd)?.date || null;
   const finalReachedDate = [observedFinalDate, estimatedFinalDate].filter(Boolean).sort()[0] || null;
   const truncatedTimeline = finalReachedDate ? timeline.filter(d => d.date <= finalReachedDate) : timeline;
 
   const stageDates = {};
   stages.forEach(stage => {
-    const observed = observations.find(o => o.stage === stage.id);
-    if (observed) {
-      stageDates[stage.id] = { date: observed.date, origin: 'Observée' };
+    const observed50 = observations.find(o => o.stage === stage.id && Number(o.percentage || 50) === 50);
+    if (observed50) {
+      stageDates[stage.id] = { date: observed50.date, origin: 'Observation' };
       return;
     }
     const reached = truncatedTimeline.find(d => d.cumulative >= stage.gdd);
@@ -760,13 +801,10 @@ function analyzeParcel(parcel, weather) {
   const nextStageDate = nextStage ? truncatedTimeline.find(d => d.cumulative >= nextStage.gdd)?.date || null : null;
   const forecastEnd = truncatedTimeline[truncatedTimeline.length - 1]?.date || null;
 
+  const latestObs = observations.filter(o => truncatedTimeline.some(d => d.date === o.date)).slice(-1)[0] || null;
   let notice = '';
   if (latestObs) {
-    notice = `Estimation recalée sur l’observation du ${formatDate(latestObs.date)} (${stageById(latestObs.stage).label}).`;
-  } else if (!effectiveStartObs && parcel.stageCDate) {
-    notice = `Le calcul démarre au stade C observé le ${formatDate(parcel.stageCDate)}.`;
-  } else if (!parcel.stageCDate) {
-    notice = 'Aucune date au stade C renseignée : estimation indicative depuis le 1er mars.';
+    notice = `Estimation recalée à partir du ${formatDate(latestObs.date)} (${latestObs.percentage || 50} % · ${stageById(latestObs.stage).label}).`;
   }
 
   return {
@@ -895,10 +933,17 @@ function drawChart() {
 
   latestAnalysis.observations.forEach(obs => {
     const point = data.find(d => d.date === obs.date);
-    const stage = stageById(obs.stage);
-    if (!point || !stage) return;
-    ctx.fillStyle = '#B4063C';
-    ctx.beginPath(); ctx.arc(x(obs.date), y(stage.gdd), 4, 0, Math.PI * 2); ctx.fill();
+    const target = observationTargetGdd(obs, latestAnalysis.stages);
+    if (!point || target == null) return;
+    ctx.save();
+    ctx.fillStyle = '#D31145';
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x(obs.date), y(target), 5.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
   });
 
   const ticks = [data[0], data[Math.floor(data.length / 2)], data[data.length - 1]].filter(Boolean);
@@ -946,8 +991,10 @@ function handleChartPointer(event) {
     if (dist < best) { best = dist; nearest = day; }
   });
   const stage = stageForGdd(nearest.cumulative, chartHoverState.analysis.stages);
-  const observed = chartHoverState.analysis.observations.find(o => o.date === nearest.date);
-  const observedText = observed ? `<br>Observation : ${stageById(observed.stage)?.label || observed.stage}` : '';
+  const observedToday = chartHoverState.analysis.observations.filter(o => o.date === nearest.date);
+  const observedText = observedToday.length
+    ? `<br>${observedToday.map(o => `Observation : ${o.percentage || 50} % · ${stageById(o.stage)?.label || o.stage}`).join('<br>')}`
+    : '';
   els.chartTooltip.innerHTML = `<strong>${formatDate(nearest.date)}</strong>${round1(nearest.cumulative)} DJ · ${stage.label}${observedText}`;
   const xInWrap = (canvasRect.left - wrapRect.left) + chartHoverState.x(nearest.date);
   const yInWrap = (canvasRect.top - wrapRect.top) + chartHoverState.y(nearest.cumulative);
@@ -1049,7 +1096,7 @@ function registerServiceWorker() {
 
 function weatherCacheKey(parcel) {
   const loc = normalizeLocation(parcel?.weatherLocation || DEFAULT_LOCATION);
-  const start = parcel?.stageCDate || `${new Date().getFullYear()}${FALLBACK_START}`;
+  const start = getThermalStartDate(parcel) || `${new Date().getFullYear()}${FALLBACK_START}`;
   return `${loc.latitude.toFixed(4)}_${loc.longitude.toFixed(4)}_${start}`;
 }
 
@@ -1091,78 +1138,55 @@ function saveWeatherCache(data, parcel, updated) {
   localStorage.setItem(WEATHER_CACHE_KEY, JSON.stringify(store));
 }
 
-async function handleImportFile(event) {
-  const file = event.target.files?.[0];
-  if (!file) return;
-  const text = await file.text();
-  const imported = parseImportedStages(text);
-  if (!imported.length) {
-    toast('Aucune observation reconnue dans le fichier.');
-    event.target.value = '';
-    return;
-  }
-  if (!canEdit()) {
-    event.target.value = '';
-    return toast('Connexion nécessaire pour importer des observations.');
-  }
-  const p = activeParcel();
-  if (!p) {
-    event.target.value = '';
-    return toast('Aucune parcelle active.');
-  }
-  for (const obs of imported) {
-    const ok = await syncObservationToSupabase(p.id, obs);
-    if (!ok) {
-      event.target.value = '';
-      return;
-    }
-  }
-  const stageC = imported.find(obs => obs.stage === 'C');
-  if (stageC && !p.stageCDate) {
-    const ok = await syncParcelToSupabase({ ...p, stageCDate: stageC.date });
-    if (!ok) {
-      event.target.value = '';
-      return;
-    }
-  }
-  await loadRemoteData();
-  renderExploitationSelect();
-  renderParcelSelect();
-  loadParcelIntoForm();
-  toast(`${imported.length} observation(s) importée(s).`);
-  event.target.value = '';
-}
+function exportStageTable() {
+  const parcel = activeParcel();
+  if (!parcel) return toast('Aucune parcelle active.');
+  if (!latestAnalysis) return toast('Aucune donnée phénologique à exporter.');
 
-function parseImportedStages(text) {
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  if (!lines.length) return [];
-  const result = [];
-  lines.forEach((line, index) => {
-    const parts = line.split(/[;,\t]/).map(s => s.trim());
-    if (parts.length < 2) return;
-    if (index === 0 && /date/i.test(parts[0]) && /(stade|stage)/i.test(parts[1])) return;
-    const date = normalizeDate(parts[0]);
-    const stage = normalizeStage(parts[1]);
-    if (date && stage) result.push({ date, stage });
+  const observations = parcel.observations || [];
+  const rows = [];
+  latestAnalysis.stages.forEach(stage => {
+    [25, 50, 75].forEach(percentage => {
+      const observed = observations.find(o => o.stage === stage.id && Number(o.percentage || 50) === percentage);
+      const target = observationTargetGdd({ stage: stage.id, percentage }, latestAnalysis.stages);
+      const estimated = target == null ? null : latestAnalysis.timeline.find(day => day.cumulative >= target);
+      const date = observed?.date || estimated?.date || '';
+      const origin = observed ? 'Observée' : (date ? 'Estimée' : '');
+      rows.push({ percentage, stage, date, origin });
+    });
   });
-  return result;
+
+  const variety = parcel.variety === 'other'
+    ? (parcel.customVarietyName || 'Autre variété')
+    : (VARIETIES.find(v => v.id === parcel.variety)?.label || parcel.variety);
+  const header = ['Exploitation','Parcelle','Variété','Pourcentage de bourgeons atteints','Stade','BBCH','Date','Origine'];
+  const csvRows = [header, ...rows.map(row => [
+    parcel.exploitation || '',
+    parcel.name || '',
+    variety,
+    `${row.percentage} %`,
+    row.stage.label,
+    row.stage.bbch,
+    row.date ? formatDate(row.date) : '',
+    row.origin
+  ])];
+  const csv = csvRows.map(row => row.map(csvEscape).join(';')).join('\r\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  const safeParcel = (parcel.name || 'parcelle').replace(/[^a-z0-9_-]+/gi, '_');
+  link.href = url;
+  link.download = `SAM_Phenologie_${safeParcel}_stades.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
-function normalizeDate(value) {
-  if (!value) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-  const m = value.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
-  if (!m) return null;
-  return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+function csvEscape(value) {
+  const text = String(value ?? '');
+  return `"${text.replace(/"/g, '""')}"`;
 }
-
-function normalizeStage(value) {
-  if (!value) return null;
-  const clean = value.toUpperCase().replace(/\s+/g, '').replace('—', '-');
-  const found = [...STAGE_META].sort((a, b) => b.id.length - a.id.length).find(stage => clean === stage.id || clean.startsWith(stage.id));
-  return found ? found.id : null;
-}
-
 
 function canEdit() {
   return supabaseConfigured && isAdmin;
@@ -1321,7 +1345,7 @@ async function loadRemoteData() {
   const obsByParcel = new Map();
   (observations || []).forEach(o => {
     if (!obsByParcel.has(o.parcel_id)) obsByParcel.set(o.parcel_id, []);
-    obsByParcel.get(o.parcel_id).push({ date: o.obs_date, stage: o.stage });
+    obsByParcel.get(o.parcel_id).push({ id: o.id, date: o.obs_date, stage: o.stage, percentage: Number(o.bud_percentage || 50) });
   });
   const previousId = state.activeParcelId;
   state.parcels = (parcels || []).map(row => ({
@@ -1330,7 +1354,6 @@ async function loadRemoteData() {
     name: row.name,
     variety: row.variety === 'opale' ? 'opal' : row.variety,
     customVarietyName: row.custom_variety_name || '',
-    stageCDate: row.stage_c_date || '',
     baseTemp: Number(row.base_temp ?? DEFAULT_BASE_TEMP),
     weatherLocation: normalizeLocation({
       name: row.weather_location_name,
@@ -1359,7 +1382,7 @@ function parcelRow(parcel) {
     name: parcel.name,
     variety: parcel.variety,
     custom_variety_name: parcel.variety === 'other' ? (parcel.customVarietyName || null) : null,
-    stage_c_date: parcel.stageCDate || null,
+    stage_c_date: getReachedStageCDate(parcel) || null,
     base_temp: parcel.baseTemp,
     weather_location_name: loc.name,
     weather_admin1: loc.admin1 || null,
@@ -1389,8 +1412,9 @@ async function syncObservationToSupabase(parcelId, observation) {
     parcel_id: parcelId,
     obs_date: observation.date,
     stage: observation.stage,
+    bud_percentage: Number(observation.percentage || 50),
     updated_at: new Date().toISOString()
-  }, { onConflict: 'parcel_id,obs_date' });
+  }, { onConflict: 'parcel_id,obs_date,stage,bud_percentage' });
   if (error) {
     console.error(error);
     toast(`Observation non enregistrée : ${error.message}`);

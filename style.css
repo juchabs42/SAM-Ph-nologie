@@ -1296,3 +1296,23 @@ button, select, input { touch-action: manipulation; }
   .auth-card input,
   .auth-button { min-height: 44px; }
 }
+
+/* Observation terrain : date + stade + pourcentage + action */
+.observation-grid {
+  grid-template-columns: minmax(130px, .85fr) minmax(190px, 1.35fr) minmax(190px, 1.2fr) auto;
+}
+
+@media (max-width: 900px) {
+  .observation-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .observation-grid .align-end {
+    width: 100%;
+  }
+}
+
+@media (max-width: 620px) {
+  .observation-grid {
+    grid-template-columns: 1fr;
+  }
+}

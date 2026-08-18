@@ -1,5 +1,5 @@
--- SAM Phénologie — schéma Supabase v2.6
--- À exécuter une fois dans Supabase > SQL Editor.
+-- SAM Phénologie — mise à jour observations 25 / 50 / 75 %
+-- À exécuter dans Supabase > SQL Editor.
 
 create table if not exists public.parcels (
   id text primary key,
@@ -19,7 +19,6 @@ create table if not exists public.parcels (
   updated_at timestamptz not null default now()
 );
 
--- Mise à niveau d'une table parcels déjà existante.
 alter table public.parcels add column if not exists custom_variety_name text;
 
 create table if not exists public.observations (
@@ -27,9 +26,46 @@ create table if not exists public.observations (
   parcel_id text not null references public.parcels(id) on delete cascade,
   obs_date date not null,
   stage text not null,
-  updated_at timestamptz not null default now(),
-  unique (parcel_id, obs_date)
+  bud_percentage integer not null default 50,
+  updated_at timestamptz not null default now()
 );
+
+-- Mise à niveau des bases déjà existantes.
+alter table public.observations add column if not exists bud_percentage integer;
+update public.observations set bud_percentage = 50 where bud_percentage is null;
+alter table public.observations alter column bud_percentage set default 50;
+alter table public.observations alter column bud_percentage set not null;
+
+-- L'ancienne contrainte empêchait plusieurs relevés le même jour.
+alter table public.observations drop constraint if exists observations_parcel_id_obs_date_key;
+
+-- Un même relevé (parcelle + date + stade + pourcentage) ne peut être enregistré qu'une fois.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'observations_parcel_date_stage_percentage_key'
+      and conrelid = 'public.observations'::regclass
+  ) then
+    alter table public.observations
+      add constraint observations_parcel_date_stage_percentage_key
+      unique (parcel_id, obs_date, stage, bud_percentage);
+  end if;
+end $$;
+
+-- Pourcentages autorisés.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'observations_bud_percentage_check'
+      and conrelid = 'public.observations'::regclass
+  ) then
+    alter table public.observations
+      add constraint observations_bud_percentage_check
+      check (bud_percentage in (25, 50, 75));
+  end if;
+end $$;
 
 alter table public.parcels enable row level security;
 alter table public.observations enable row level security;
@@ -40,7 +76,6 @@ grant insert, update, delete on public.parcels to authenticated;
 grant insert, update, delete on public.observations to authenticated;
 grant usage, select on sequence public.observations_id_seq to authenticated;
 
--- Lecture publique : producteurs / visiteurs peuvent consulter.
 drop policy if exists "parcels_public_read" on public.parcels;
 create policy "parcels_public_read"
 on public.parcels for select
@@ -53,7 +88,6 @@ on public.observations for select
 to anon, authenticated
 using (true);
 
--- Écriture réservée aux comptes Supabase authentifiés (comptes SudExpé uniquement).
 drop policy if exists "parcels_authenticated_insert" on public.parcels;
 create policy "parcels_authenticated_insert"
 on public.parcels for insert
