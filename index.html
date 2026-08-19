@@ -2,21 +2,15 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#d31145">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="SAM Piégeage">
-<meta name="description" content="SAM Piégeage — suivi partagé des captures de ravageurs par parcelle.">
-<title>SAM Piégeage</title>
-  <link rel="icon" href="favicon.ico" sizes="any">
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
-  <link rel="manifest" href="site.webmanifest">
-
-<link rel="stylesheet" href="style.css?v=20260819-2">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#D31145">
+  <meta name="description" content="SAM Phénologie — suivi des stades phénologiques du pommier par degrés-jours.">
+  <title>SAM Phénologie</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="shortcut icon" href="favicon.ico?v=phenologie-4">
+  <link rel="icon" type="image/png" sizes="64x64" href="favicon.png?v=phenologie-4">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=phenologie-4">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="topbar">
@@ -25,281 +19,273 @@
         <img src="logo-sudexpe.png" alt="Logo SudExpé" class="brand-logo">
       </div>
       <div class="logo-shell sam-shell">
-        <img src="logo-sam-piegeage.png" alt="Logo SAM Piégeage" class="brand-logo app-brand-logo">
+        <img src="logo-sam-pheno.png" alt="Logo SAM Phénologie" class="brand-logo app-brand-logo">
       </div>
       <div class="brand-copy">
         <p class="brand-kicker">Sud Agro Météo</p>
-        <h1>SAM Piégeage</h1>
+        <h1>SAM Phénologie</h1>
       </div>
     </div>
 
-    <button id="authToggleButton" class="auth-toggle-button mobile-only" type="button"
-            aria-expanded="false" aria-controls="authCard" aria-label="Afficher la connexion">
+    <button id="authToggleButton" class="auth-toggle-button mobile-only" type="button" aria-expanded="false" aria-controls="authCard" aria-label="Afficher la connexion">
       <img src="bouton-connexion.png" alt="" class="auth-toggle-icon" aria-hidden="true">
     </button>
 
     <div id="authCard" class="auth-card" aria-label="Connexion">
       <p class="auth-card-title mobile-only">Connexion</p>
-
       <form id="loginForm" class="auth-form">
-        <input id="loginEmail" type="email" autocomplete="username"
-               placeholder="Adresse mail" aria-label="Adresse mail" required>
-        <input id="loginPassword" type="password" autocomplete="current-password"
-               placeholder="Mot de passe" aria-label="Mot de passe" required>
-        <button class="auth-button" type="submit">Connexion</button>
+        <input id="authEmail" type="email" autocomplete="username" placeholder="Adresse mail" aria-label="Adresse mail" required>
+        <input id="authPassword" type="password" autocomplete="current-password" placeholder="Mot de passe" aria-label="Mot de passe" required>
+        <button id="loginBtn" class="auth-button" type="submit">Connexion</button>
       </form>
-
-      <div id="connectedBlock" class="connected-block hidden">
+      <div id="loggedInBox" class="connected-block hidden">
         <div>
-          <span class="connected-label">Connecté</span>
-          <strong id="connectedEmail"></strong>
+          <strong id="loggedInEmail"></strong>
         </div>
-        <button id="logoutButton" class="logout-button" type="button"
-                title="Se déconnecter" aria-label="Se déconnecter">↪</button>
+        <button id="logoutBtn" class="logout-button" type="button" title="Se déconnecter" aria-label="Se déconnecter">↪</button>
       </div>
-
-      <p id="loginMessage" class="auth-message" role="status"></p>
+      <p id="authStatus" class="auth-message hidden" role="status"></p>
     </div>
   </header>
 
-  <main>
-    <section class="section-heading">
+  <section id="installCard" class="card install-panel mobile-only hidden" aria-label="Installer l'application">
+    <div class="install-panel-header">
+      <div class="install-panel-logo-wrap">
+        <img src="logo-sam-pheno.png" alt="Logo SAM Phénologie" class="install-panel-logo">
+      </div>
       <div>
-        <p class="eyebrow">Réseau de piégeage SudExpé</p>
-        <h2>Suivi des piégeages ravageurs</h2>
-        <p>Visualisez les captures par exploitation et par parcelle. La saisie et la création de parcelles sont réservées aux utilisateurs connectés.</p>
+        <p class="eyebrow">Application</p>
+        <h2>Installer l'application</h2>
+        <p class="install-panel-text">Ajoute SAM Phéno sur l’écran d’accueil pour l’utiliser plus facilement sur téléphone.</p>
       </div>
+    </div>
+    <div class="install-panel-actions">
+      <button id="installButton" class="primary-button install-card-button" type="button">Installer l’application</button>
+    </div>
+    <div id="installMessage" class="install-inline-message hidden" role="status"></div>
+  </section>
 
-      <div class="heading-actions">
-<div id="editActions" class="edit-actions" hidden>
-          <button id="addParcelButton" class="primary-button action-button" type="button">+ Créer une parcelle</button>
-          <button id="addObservationButton" class="secondary-button action-button" type="button">+ Ajouter un relevé</button>
-        </div>
-      </div>
-    </section>
-    <section id="installCard" class="panel install-panel mobile-only hidden"
-             aria-label="Installer l'application">
-      <div class="install-panel-header">
-        <div class="install-panel-logo-wrap">
-          <img src="logo-sam-piegeage.png" alt="Logo SAM Piégeage" class="install-panel-logo">
-        </div>
+<main>
+    <section class="card active-card" aria-labelledby="active-title">
+      <div class="section-heading">
         <div>
-          <p class="panel-kicker">Application</p>
-          <h3>Installer l'application</h3>
-          <p class="install-panel-text">
-            Ajoute SAM Piégeage sur l’écran d’accueil pour l’utiliser plus facilement sur téléphone.
-          </p>
+          <p class="eyebrow">Parcelle active</p>
+          <h2 id="active-title">Choix de l’exploitation et de la parcelle</h2>
         </div>
+        <span id="dataModeBadge" class="mode-badge">Mode local</span>
       </div>
-      <div class="install-panel-actions">
-        <button id="installButton" class="primary-button install-card-button" type="button">
-          Installer l’application
-        </button>
+
+      <div class="active-selectors">
+        <label>Exploitation
+          <select id="exploitationSelect" aria-label="Choisir une exploitation"></select>
+        </label>
+        <label>Parcelle
+          <select id="parcelSelect" aria-label="Choisir une parcelle"></select>
+        </label>
       </div>
-      <div id="installMessage" class="install-inline-message hidden" role="status"></div>
+
+      <div class="active-summary">
+        <div><span>Variété</span><strong id="activeVariety">—</strong></div>
+        <div><span>Localisation météo</span><strong id="activeWeatherLocation">—</strong></div>
+        <div><span>Point de départ</span><strong id="activeStart">—</strong></div>
+      </div>
+
+      <div class="active-actions">
+        <button id="configurationBtn" class="secondary" type="button">Configuration</button>
+        <button id="newParcelBtn" data-editable type="button">Nouvelle parcelle</button>
+      </div>
     </section>
 
+    <nav class="tabs" aria-label="Navigation principale">
+      <button id="dashboardTabBtn" class="tab-button" type="button" aria-selected="false">Suivi actuel</button>
+      <button id="historyTabBtn" class="tab-button active" type="button" aria-selected="true">Historique &amp; courbes</button>
+    </nav>
 
-    <div id="globalMessage" class="global-message" role="status"></div>
-    <div id="syncStatus" class="sync-status hidden" role="status"></div>
+    <div id="dashboardView" class="view hidden">
+      <section id="configPanel" class="card hidden" aria-labelledby="config-title">
+        <div class="section-heading">
+          <div>
+            <p id="configEyebrow" class="eyebrow">Configuration</p>
+            <h2 id="config-title">Paramètres de la parcelle active</h2>
+          </div>
+          <div class="config-header-actions">
+            <span id="editStatus" class="mode-badge hidden">Lecture seule</span>
+            <button id="closeConfigBtn" class="secondary" type="button">Fermer</button>
+          </div>
+        </div>
 
-    <section class="controls" aria-label="Filtres">
-      <label>
-        Ravageur
-        <select id="pestSelect">
-          <option value="all">Tous les ravageurs</option>
-          <option value="carpocapse">Carpocapse</option>
-          <option value="punaise_diabolique">Punaise diabolique</option>
-          <option value="cicadelle">Cicadelle</option>
-          <option value="mouche_mediterraneenne">Mouche méditerranéenne</option>
-          <option value="tordeuse">Tordeuse</option>
-        </select>
-      </label>
+        <div class="grid two">
+          <label>Culture
+            <input type="text" value="Pomme" disabled>
+          </label>
+          <label>Exploitation
+            <input id="exploitation" data-editable type="text" placeholder="Ex. SudExpé Marsillargues">
+          </label>
+        </div>
 
-      <label>
-        Année
-        <select id="yearSelect"></select>
-      </label>
+        <div class="grid two">
+          <label>Parcelle
+            <input id="parcelName" data-editable type="text" placeholder="Ex. Verger Nord">
+          </label>
+          <label>
+            <span class="label-with-info">Variété
+              <button type="button" class="info-btn" data-info="varietyInfo" aria-label="Information sur la variété">i</button>
+            </span>
+            <select id="variety" data-editable></select>
+          </label>
+        </div>
+        <div id="otherVarietyField" class="grid one hidden">
+          <label>Nom de la variété
+            <input id="otherVarietyName" data-editable type="text" placeholder="Ex. Chantecler">
+          </label>
+        </div>
+        <div id="varietyInfo" class="info-box hidden"><span id="varietyInfoText">En l’absence de modèle variétal validé, le calcul utilise le modèle générique du pommier.</span></div>
 
-      <label>
-        Exploitation
-        <select id="farmSelect"></select>
-      </label>
+        <div id="modelStatus" class="model-status" aria-live="polite">
+          <div>
+            <span class="readonly-label">Modèle thermique appliqué</span>
+            <p id="modelDescription">Le calcul utilise les seuils génériques du pommier, recalables par les observations terrain.</p>
+          </div>
+        </div>
 
-      <label>
-        Parcelle
-        <select id="parcelSelect"></select>
-      </label>
+        <div class="grid station-grid">
+          <div class="location-picker">
+            <span class="readonly-label">Localisation météo</span>
+            <div class="location-search-row">
+              <input id="locationSearch" data-editable type="search" placeholder="Commune ou code postal, ex. Marsillargues">
+              <button id="searchLocationBtn" data-editable class="secondary" type="button">Rechercher</button>
+            </div>
+            <select id="locationResults" data-editable class="hidden" aria-label="Résultats de recherche de localisation"></select>
+            <div id="selectedLocation" class="selected-location">—</div>
+          </div>
 
-      <label>
-        Calcul
-        <select id="calculationSelect">
-          <option value="total">Total des captures</option>
-          <option value="average">Moyenne des captures</option>
-        </select>
-      </label>
+          <label>
+            <span class="label-with-info">Température de base
+              <button type="button" class="info-btn" data-info="baseTempInfo" aria-label="Information sur la température de base">i</button>
+            </span>
+            <div class="input-suffix"><input id="baseTemp" data-editable type="number" value="5" step="0.1"><span>°C</span></div>
+          </label>
+        </div>
+        <div id="baseTempInfo" class="info-box hidden"><span id="baseTempInfoText">La température de base est le seuil sous lequel le développement du pommier est considéré comme très faible. La valeur de 5 °C est utilisée pour calculer simplement l’accumulation de chaleur depuis le stade C.</span></div>
 
-      <label>
-        Affichage
-        <select id="displaySelect">
-          <option value="records">Captures par relevé</option>
-          <option value="cumulative">Cumul saisonnier</option>
-        </select>
-      </label>
+        <div class="actions admin-actions">
+          <button id="saveParcelBtn" data-editable type="button">Enregistrer les modifications</button>
+          <button id="deleteParcelBtn" data-editable class="danger" type="button">Supprimer</button>
+        </div>
+      </section>
 
-      <button id="exportCsvButton" class="secondary-button control-button" type="button">Exporter CSV</button>
-    </section>
+      <section id="statusCard" class="hero-card" aria-live="polite">
+        <p class="eyebrow">Stade estimé aujourd’hui</p>
+        <h2 id="stageMain">—</h2>
+        <p id="stageBbch" class="bbch">Chargement</p>
+        <div class="hero-stats">
+          <div><span>Cumul depuis C</span><strong id="gddTotal">—</strong></div>
+          <div><span>Prochain stade</span><strong id="nextStage">—</strong></div>
+          <div><span>Date prévue</span><strong id="nextDate">—</strong></div>
+        </div>
+        <p id="calibrationNotice" class="notice hidden"></p>
+      </section>
 
-    <div class="metric-grid">
-      <article class="metric-card">
-        <p>Dernier relevé</p>
-        <strong id="lastValue">—</strong>
-        <span id="lastDate">Aucune donnée</span>
-      </article>
-      <article class="metric-card">
-        <p>Tendance</p>
-        <strong id="trendValue">—</strong>
-        <span>Comparaison avec les relevés précédents</span>
-      </article>
-      <article class="metric-card">
-        <p>Cumul saisonnier</p>
-        <strong id="seasonTotal">—</strong>
-        <span id="seasonUnit">captures</span>
-      </article>
-      <article class="metric-card">
-        <p>Nombre de relevés</p>
-        <strong id="recordCount">0</strong>
-        <span id="lastUpdate">Aucune mise à jour</span>
-      </article>
+      <section id="alertsSection" class="card hidden" aria-labelledby="alerts-title">
+        <h2 id="alerts-title">Alertes</h2>
+        <div id="alertsList" class="alerts"></div>
+      </section>
+
+      <section class="card" aria-labelledby="observation-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Terrain</p>
+            <h2 id="observation-title">Ajouter une observation</h2>
+          </div>
+        </div>
+        <div class="grid observation-grid admin-entry">
+          <label>Date
+            <input id="observationDate" data-editable type="date">
+          </label>
+          <label>Stade observé
+            <select id="observationStage" data-editable></select>
+          </label>
+          <label>Pourcentage de bourgeons atteints
+            <select id="observationPercentage" data-editable>
+              <option value="25">25 %</option>
+              <option value="50" selected>50 % — stade atteint</option>
+              <option value="75">75 %</option>
+            </select>
+          </label>
+          <button id="addObservationBtn" data-editable class="align-end" type="button">Ajouter</button>
+        </div>
+        <p class="hint">Une observation terrain recale automatiquement l’estimation sur le cumul thermique réel de la parcelle.</p>
+        <div id="observationsList" class="observations"></div>
+      </section>
+
+      <section class="card" aria-labelledby="forecast-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Météo</p>
+            <h2 id="forecast-title">Prévision phénologique</h2>
+          </div>
+          <button id="refreshBtn" class="secondary" type="button">Actualiser</button>
+        </div>
+        <div id="weatherStatus" class="loading-state">Aucune donnée chargée.</div>
+        <div id="forecastTableWrap" class="table-wrap hidden">
+          <table>
+            <thead><tr><th>Date</th><th>T min</th><th>T max</th><th>DJ</th><th>Cumul</th><th>Stade</th></tr></thead>
+            <tbody id="forecastBody"></tbody>
+          </table>
+        </div>
+      </section>
     </div>
 
-    <article class="panel">
-      <div class="panel-header">
-        <div>
-          <p class="panel-kicker">Dynamique saisonnière</p>
-          <h3 id="chartTitle">Captures par relevé</h3>
+    <div id="historyView" class="view">
+      <section class="card" aria-labelledby="stage-history-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Chronologie</p>
+            <h2 id="stage-history-title">Dates de passage des stades</h2>
+          </div>
+          <button id="exportStagesBtn" class="secondary" type="button">Exporter le tableau des stades</button>
         </div>
-      </div>
-      <div id="chartEmpty" class="empty-state">Aucune donnée pour cette sélection.</div>
-      <div class="chart-wrap large">
-        <canvas id="trapChart" aria-label="Graphique des captures de ravageurs"></canvas>
-      </div>
-    </article>
+        <p class="hint">Les dates observées sont prioritaires. Les autres dates sont estimées à partir du cumul de degrés-jours recalé.</p>
+        <div id="stageHistoryStatus" class="loading-state">Aucune donnée chargée.</div>
+        <div id="stageHistoryWrap" class="table-wrap hidden">
+          <table class="stage-history-table">
+            <thead><tr><th>Stade</th><th>Code BBCH</th><th>Date de passage</th><th>Origine</th></tr></thead>
+            <tbody id="stageHistoryBody"></tbody>
+          </table>
+        </div>
+      </section>
 
-    <article class="panel">
-      <div class="panel-header">
-        <div>
-          <p class="panel-kicker">Historique</p>
-          <h3>Relevés enregistrés</h3>
+      <section class="card" aria-labelledby="gdd-chart-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Évolution thermique</p>
+            <h2 id="gdd-chart-title">Courbe cumulée des degrés-jours</h2>
+          </div>
         </div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Parcelle</th>
-              <th>Ravageur</th>
-              <th>Captures</th>
-              <th>Enregistré le</th>
-              <th id="historyActionHeader" class="hidden">Action</th>
-            </tr>
-          </thead>
-          <tbody id="historyBody"></tbody>
-        </table>
-      </div>
-    </article>
+        <div class="chart-metrics">
+          <div class="chart-metric"><span>Aujourd’hui</span><strong id="chartCurrentGdd">—</strong></div>
+          <div class="chart-metric"><span>Seuil du prochain stade</span><strong id="chartNextThreshold">—</strong></div>
+          <div class="chart-metric"><span>Fin de prévision</span><strong id="chartForecastEnd">—</strong></div>
+        </div>
+        <div class="chart-legend">
+          <span><i class="legend-line history-line"></i>Historique</span>
+          <span><i class="legend-line forecast-line"></i>Prévision Open-Meteo</span>
+          <span><i class="legend-dot"></i>Observation terrain</span>
+        </div>
+        <div id="gddChartStatus" class="loading-state">Aucune donnée chargée.</div>
+        <div id="chartWrap" class="chart-wrap">
+          <canvas id="gddChart" role="img" aria-label="Courbe du cumul des degrés-jours avec seuils des stades phénologiques"></canvas>
+          <div id="chartTooltip" class="chart-tooltip hidden"></div>
+        </div>
+      </section>
+    </div>
   </main>
 
-  <dialog id="parcelDialog" class="app-dialog">
-    <div class="dialog-header">
-      <div>
-        <p class="panel-kicker">Parcelle</p>
-        <h2>Créer une parcelle</h2>
-      </div>
-      <button id="closeParcelDialog" class="close-button" type="button" aria-label="Fermer">×</button>
-    </div>
+  <footer><strong>SudExpé</strong> · Outil d’aide au suivi</footer>
 
-    <form id="parcelForm" class="dialog-form">
-      <label>
-        Exploitation
-        <input id="parcelFarm" type="text" maxlength="100" required>
-      </label>
-      <label>
-        Parcelle
-        <input id="parcelName" type="text" maxlength="100" required>
-      </label>
-      <label>
-        Variété
-        <input id="parcelVariety" type="text" maxlength="100" required>
-      </label>
-      <label>
-        Surface (ha)
-        <input id="parcelArea" type="number" min="0" step="0.01" required>
-      </label>
-      <button class="primary-button full-span" type="submit">Créer la parcelle</button>
-    </form>
-    <div id="parcelMessage" class="form-message" role="status"></div>
-
-    <div class="parcel-management">
-      <div class="parcel-management-header">
-        <div>
-          <p class="panel-kicker">Gestion</p>
-          <h3>Parcelles existantes</h3>
-        </div>
-      </div>
-      <div id="parcelList" class="parcel-list"></div>
-    </div>
-  </dialog>
-
-  <dialog id="observationDialog" class="app-dialog">
-    <div class="dialog-header">
-      <div>
-        <p class="panel-kicker">Parcelle</p>
-        <h2>Ajouter un relevé</h2>
-      </div>
-      <button id="closeObservationDialog" class="close-button" type="button" aria-label="Fermer">×</button>
-    </div>
-
-    <form id="observationForm" class="dialog-form">
-      <label>
-        Exploitation
-        <select id="entryFarm" required></select>
-      </label>
-      <label>
-        Parcelle
-        <select id="entryParcel" required></select>
-      </label>
-      <label>
-        Ravageur
-        <select id="entryPest" required>
-          <option value="carpocapse">Carpocapse</option>
-          <option value="punaise_diabolique">Punaise diabolique</option>
-          <option value="cicadelle">Cicadelle</option>
-          <option value="mouche_mediterraneenne">Mouche méditerranéenne</option>
-          <option value="tordeuse">Tordeuse</option>
-        </select>
-      </label>
-      <label>
-        Date du relevé
-        <input id="observationDate" type="date" required>
-      </label>
-      <label class="full-span">
-        Nombre de captures
-        <input id="observationCount" type="number" min="0" step="1" inputmode="numeric" required>
-      </label>
-      <button class="primary-button full-span" type="submit">Enregistrer le relevé</button>
-    </form>
-    <div id="observationMessage" class="form-message" role="status"></div>
-  </dialog>
-<footer>
-    <p>SAM Piégeage — SudExpé</p>
-    <p>Outil de suivi des captures de ravageurs.</p>
-  </footer>
-
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="supabase-config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-  <script src="config.js?v=20260819-2"></script>
-  <script src="app.js?v=20260819-2"></script>
+  <script src="app.js" defer></script>
 </body>
 </html>

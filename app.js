@@ -1,1603 +1,1826 @@
-const PESTS = {
-  carpocapse: "Carpocapse",
-  punaise_diabolique: "Punaise diabolique",
-  cicadelle: "Cicadelle",
-  mouche_mediterraneenne: "Mouche méditerranéenne",
-  tordeuse: "Tordeuse"
+'use strict';
+
+const VERSION = '3.1';
+const STORAGE_KEY = 'sam-phenologie-v2.7';
+const LEGACY_STORAGE_KEYS = ['sam-phenologie-v2.6', 'sam-phenologie-v2.5', 'sam-phenologie-v2.4', 'sam-phenologie-v2.3', 'sam-phenologie-v1'];
+const WEATHER_CACHE_KEY = 'sam-phenologie-weather-v2.7';
+const LEGACY_WEATHER_CACHE_KEYS = ['sam-phenologie-weather-v2.6', 'sam-phenologie-weather-v2.5', 'sam-phenologie-weather-v2.4', 'sam-phenologie-weather-cache-v1'];
+const REMOTE_CACHE_KEY = 'sam-phenologie-remote-cache-v1';
+const OFFLINE_QUEUE_KEY = 'sam-phenologie-offline-observations-v1';
+const DEFAULT_LOCATION = { name: 'Marsillargues', admin1: 'Occitanie', country: 'France', latitude: 43.6343, longitude: 4.1706, elevation: 2, timezone: 'Europe/Paris' };
+const DEFAULT_BASE_TEMP = 5;
+const FALLBACK_START = '-03-01';
+
+const STAGE_META = [
+  { id: 'C', label: 'C — éclatement des bourgeons', bbch: 'BBCH 53' },
+  { id: 'C3', label: 'C3 — oreille de souris', bbch: 'BBCH 54' },
+  { id: 'D', label: 'D — bouton vert', bbch: 'BBCH 56' },
+  { id: 'E', label: 'E — bouton rose', bbch: 'BBCH 57' },
+  { id: 'E2', label: 'E2 — ballonnets', bbch: 'BBCH 59' },
+  { id: 'F', label: 'F — début floraison', bbch: 'BBCH 61' },
+  { id: 'F2', label: 'F2 — pleine floraison', bbch: 'BBCH 65' },
+  { id: 'G', label: 'G — floraison déclinante', bbch: 'BBCH 67' },
+  { id: 'H', label: 'H — fin floraison', bbch: 'BBCH 69' },
+  { id: 'I', label: 'I — nouaison', bbch: 'BBCH 71' },
+  { id: 'J', label: 'J — taille noisette', bbch: 'BBCH 72' }
+];
+
+const GENERIC_THRESHOLDS = { C: 0, C3: 30, D: 70, E: 110, E2: 145, F: 185, F2: 225, G: 265, H: 305, I: 355, J: 425 };
+
+// Seuils WSU normalisés à 0 DJ au stade Green Tip, assimilé ici au stade Fleckinger C.
+// Le stade G est interpolé entre Full Bloom et Petal Fall. I et J prolongent le modèle
+// avec les incréments génériques après H, car l'étude WSU s'arrête à Petal Fall.
+const GALA_THRESHOLDS = { C: 0, C3: 22.84, D: 75.76, E: 112.82, E2: 147.16, F: 185.48, F2: 207.72, G: 234.97, H: 262.22, I: 312.22, J: 382.22 };
+const CRIPPS_PINK_THRESHOLDS = { C: 0, C3: 13.72, D: 55.26, E: 82.40, E2: 113.45, F: 152.61, F2: 181.91, G: 204.91, H: 227.90, I: 277.90, J: 347.90 };
+
+const WSU_REPORT_URL = 'https://treefruitresearch.org/wp-content/uploads/2019/11/Report-723.-Hoogenboom_Final_Report_Apple_2015.pdf';
+const ACTA_URL = 'https://www.actahort.org/books/1160/1160_29.htm';
+
+const MODEL_CONFIG = {
+  gala: {
+    id: 'gala-wsu',
+    name: 'Modèle variétal Gala — WSU',
+    baseTemp: 6.1,
+    fixedBase: true,
+    thresholds: GALA_THRESHOLDS,
+    description: 'Seuils variétaux C à H issus du modèle WSU à base 6,1 °C, normalisés au stade C. Le stade G est interpolé ; les stades I et J utilisent une prolongation générique après H.',
+    referenceLinks: [
+      { label: 'Rapport scientifique WSU', url: WSU_REPORT_URL },
+      { label: 'Article Acta Horticulturae', url: ACTA_URL }
+    ]
+  },
+  pinklady: {
+    id: 'cripps-pink-wsu',
+    name: 'Modèle variétal Cripps Pink / Pink Lady — WSU',
+    baseTemp: 6.1,
+    fixedBase: true,
+    thresholds: CRIPPS_PINK_THRESHOLDS,
+    description: 'Seuils variétaux C à H issus du modèle WSU à base 6,1 °C, normalisés au stade C. Le stade G est interpolé ; les stades I et J utilisent une prolongation générique après H.',
+    referenceLinks: [
+      { label: 'Rapport scientifique WSU', url: WSU_REPORT_URL },
+      { label: 'Article Acta Horticulturae', url: ACTA_URL }
+    ]
+  },
+  generic: {
+    id: 'generic-apple',
+    name: 'Modèle générique du pommier',
+    baseTemp: DEFAULT_BASE_TEMP,
+    fixedBase: false,
+    thresholds: GENERIC_THRESHOLDS,
+    description: 'Le calcul utilise les seuils génériques du pommier, recalables par les observations terrain.',
+    referenceLinks: []
+  }
 };
 
-const COLORS = ["#D31145", "#31688E", "#2E8B57", "#A56A00", "#744F9C", "#008C95", "#B04A3A", "#58636D"];
-
-let db;
-let currentUser = null;
-let parcels = [];
-let observations = [];
-let chart = null;
-let deferredInstallPrompt = null;
-let pendingObservations = [];
-let pendingParcels = [];
-let syncInProgress = false;
-
-const OFFLINE_DB_NAME = "sam-piegeage-offline";
-const OFFLINE_DB_VERSION = 2;
-const OFFLINE_STORE_PENDING = "pending_observations";
-const OFFLINE_STORE_PENDING_PARCELS = "pending_parcels";
-const OFFLINE_STORE_CACHE = "cache";
-const INSTALL_STORAGE_KEY = "samPiegeageInstalled";
-
-const $ = (id) => document.getElementById(id);
-
-function setMessage(element, message = "", error = false) {
-  element.textContent = message;
-  element.classList.toggle("error", error);
-}
-
-function formatDate(iso) {
-  if (!iso) return "—";
-  return new Date(`${iso}T12:00:00`).toLocaleDateString("fr-FR");
-}
-
-function formatDateTime(iso) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
-}
-
-function formatNumber(value, digits = 1) {
-  return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: digits }).format(value);
-}
-
-
-function openOfflineDb() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(OFFLINE_DB_NAME, OFFLINE_DB_VERSION);
-
-    request.onupgradeneeded = () => {
-      const database = request.result;
-
-      if (!database.objectStoreNames.contains(OFFLINE_STORE_PENDING)) {
-        database.createObjectStore(OFFLINE_STORE_PENDING, { keyPath: "id" });
-      }
-
-      if (!database.objectStoreNames.contains(OFFLINE_STORE_PENDING_PARCELS)) {
-        database.createObjectStore(OFFLINE_STORE_PENDING_PARCELS, { keyPath: "id" });
-      }
-
-      if (!database.objectStoreNames.contains(OFFLINE_STORE_CACHE)) {
-        database.createObjectStore(OFFLINE_STORE_CACHE, { keyPath: "key" });
-      }
-    };
-
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function idbGetAll(storeName) {
-  const database = await openOfflineDb();
-
-  return new Promise((resolve, reject) => {
-    const tx = database.transaction(storeName, "readonly");
-    const request = tx.objectStore(storeName).getAll();
-
-    request.onsuccess = () => resolve(request.result || []);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function idbPut(storeName, value) {
-  const database = await openOfflineDb();
-
-  return new Promise((resolve, reject) => {
-    const tx = database.transaction(storeName, "readwrite");
-    tx.objectStore(storeName).put(value);
-
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-async function idbDelete(storeName, key) {
-  const database = await openOfflineDb();
-
-  return new Promise((resolve, reject) => {
-    const tx = database.transaction(storeName, "readwrite");
-    tx.objectStore(storeName).delete(key);
-
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-async function saveCachedData() {
-  try {
-    await idbPut(OFFLINE_STORE_CACHE, {
-      key: "dataset",
-      parcels,
-      observations,
-      saved_at: new Date().toISOString()
-    });
-  } catch (error) {
-    console.warn("Cache local non enregistré :", error);
-  }
-}
-
-async function loadCachedData() {
-  try {
-    const rows = await idbGetAll(OFFLINE_STORE_CACHE);
-    return rows.find(row => row.key === "dataset") || null;
-  } catch (error) {
-    console.warn("Cache local non disponible :", error);
-    return null;
-  }
-}
-
-async function loadPendingObservations() {
-  try {
-    const rows = await idbGetAll(OFFLINE_STORE_PENDING);
-    pendingObservations = rows
-      .filter(row => !currentUser || row.created_by === currentUser.id)
-      .sort((a, b) =>
-        a.observed_on.localeCompare(b.observed_on) ||
-        a.created_at.localeCompare(b.created_at)
-      );
-  } catch (error) {
-    console.warn("File d'attente locale non disponible :", error);
-    pendingObservations = [];
-  }
-}
-
-
-async function loadPendingParcels() {
-  try {
-    const rows = await idbGetAll(OFFLINE_STORE_PENDING_PARCELS);
-    pendingParcels = rows
-      .filter(row => !currentUser || row.created_by === currentUser.id)
-      .sort((a, b) =>
-        a.exploitation.localeCompare(b.exploitation, "fr") ||
-        a.name.localeCompare(b.name, "fr")
-      );
-  } catch (error) {
-    console.warn("Parcelles locales en attente non disponibles :", error);
-    pendingParcels = [];
-  }
-}
-
-function displayParcels() {
-  const remoteIds = new Set(parcels.map(parcel => parcel.id));
-
-  return [
-    ...parcels,
-    ...pendingParcels.filter(parcel => !remoteIds.has(parcel.id))
-  ];
-}
-
-function createOfflineParcel({ exploitation, name, variety, area }) {
-  return {
-    id: crypto.randomUUID(),
-    exploitation,
-    name,
-    variety,
-    area_ha: area,
-    created_by: currentUser.id,
-    created_at: new Date().toISOString(),
-    _pending: true
-  };
-}
-
-async function queueParcel(parcel) {
-  await idbPut(OFFLINE_STORE_PENDING_PARCELS, parcel);
-  pendingParcels.push(parcel);
-  pendingParcels.sort((a, b) =>
-    a.exploitation.localeCompare(b.exploitation, "fr") ||
-    a.name.localeCompare(b.name, "fr")
-  );
-  updateSyncStatus();
-}
-
-async function removePendingParcel(id) {
-  await idbDelete(OFFLINE_STORE_PENDING_PARCELS, id);
-  pendingParcels = pendingParcels.filter(parcel => parcel.id !== id);
-  updateSyncStatus();
-}
-
-async function remapPendingObservations(oldParcelId, newParcelId) {
-  const affected = pendingObservations.filter(record => record.parcel_id === oldParcelId);
-
-  for (const record of affected) {
-    record.parcel_id = newParcelId;
-    await idbPut(OFFLINE_STORE_PENDING, record);
-  }
-}
-
-async function syncPendingParcels() {
-  if (!navigator.onLine || !currentUser || !pendingParcels.length) return 0;
-
-  let synced = 0;
-  const queue = pendingParcels.slice();
-
-  for (const parcel of queue) {
-    if (parcel.created_by !== currentUser.id) continue;
-
-    const payload = {
-      id: parcel.id,
-      exploitation: parcel.exploitation,
-      name: parcel.name,
-      variety: parcel.variety,
-      area_ha: parcel.area_ha,
-      created_by: parcel.created_by
-    };
-
-    const { data, error } = await db
-      .from("piegeage_parcels")
-      .insert(payload)
-      .select("id, exploitation, name, variety, area_ha, created_by, created_at")
-      .single();
-
-    if (!error) {
-      await removePendingParcel(parcel.id);
-      if (!parcels.some(item => item.id === data.id)) parcels.push(data);
-      synced += 1;
-      continue;
-    }
-
-    if (error.code === "23505") {
-      const { data: existing, error: lookupError } = await db
-        .from("piegeage_parcels")
-        .select("id, exploitation, name, variety, area_ha, created_by, created_at")
-        .eq("exploitation", parcel.exploitation)
-        .eq("name", parcel.name)
-        .maybeSingle();
-
-      if (!lookupError && existing) {
-        await remapPendingObservations(parcel.id, existing.id);
-        await removePendingParcel(parcel.id);
-        if (!parcels.some(item => item.id === existing.id)) parcels.push(existing);
-        synced += 1;
-        continue;
-      }
-    }
-
-    if (isNetworkError(error)) break;
-
-    console.warn("Parcelle non synchronisée :", error);
-  }
-
-  parcels.sort((a, b) =>
-    a.exploitation.localeCompare(b.exploitation, "fr") ||
-    a.name.localeCompare(b.name, "fr")
-  );
-
-  return synced;
-}
-
-function displayObservations() {
-  const remoteIds = new Set(observations.map(record => record.id));
-
-  return [
-    ...observations,
-    ...pendingObservations.filter(record => !remoteIds.has(record.id))
-  ];
-}
-
-function isNetworkError(error) {
-  if (!navigator.onLine) return true;
-
-  const message = String(error?.message || error || "");
-  return /failed to fetch|network|load failed|fetch failed|networkerror/i.test(message);
-}
-
-function updateSyncStatus(message = null, mode = null) {
-  const box = $("syncStatus");
-  if (!box) return;
-
-  box.classList.remove("hidden", "offline", "syncing", "success");
-
-  if (message) {
-    box.textContent = message;
-    if (mode) box.classList.add(mode);
-    return;
-  }
-
-  const parcelCount = pendingParcels.length;
-  const observationCount = pendingObservations.length;
-  const total = parcelCount + observationCount;
-
-  const parts = [];
-  if (parcelCount) {
-    parts.push(`${parcelCount} parcelle${parcelCount > 1 ? "s" : ""}`);
-  }
-  if (observationCount) {
-    parts.push(`${observationCount} relevé${observationCount > 1 ? "s" : ""}`);
-  }
-
-  if (!navigator.onLine) {
-    box.textContent = total
-      ? `Hors connexion — ${parts.join(" · ")} en attente`
-      : "Hors connexion";
-    box.classList.add("offline");
-    return;
-  }
-
-  if (total) {
-    box.textContent = `${parts.join(" · ")} en attente de synchronisation`;
-    box.classList.add("syncing");
-    return;
-  }
-
-  box.classList.add("hidden");
-}
-function showSyncSuccess(parcelCount, observationCount) {
-  const parts = [];
-
-  if (parcelCount) {
-    parts.push(`${parcelCount} parcelle${parcelCount > 1 ? "s" : ""}`);
-  }
-  if (observationCount) {
-    parts.push(`${observationCount} relevé${observationCount > 1 ? "s" : ""}`);
-  }
-
-  if (!parts.length) {
-    updateSyncStatus();
-    return;
-  }
-
-  updateSyncStatus(`${parts.join(" · ")} synchronisé${parcelCount + observationCount > 1 ? "s" : ""}`, "success");
-  window.setTimeout(() => updateSyncStatus(), 3500);
-}
-function createOfflineObservation({ parcelId, pest, date, captures }) {
-  const id = crypto.randomUUID();
-
-  return {
-    id,
-    parcel_id: parcelId,
-    pest,
-    observed_on: date,
-    captures,
-    created_by: currentUser.id,
-    created_at: new Date().toISOString(),
-    _pending: true
-  };
-}
-
-async function queueObservation(record) {
-  await idbPut(OFFLINE_STORE_PENDING, record);
-  pendingObservations.push(record);
-  pendingObservations.sort((a, b) =>
-    a.observed_on.localeCompare(b.observed_on) ||
-    a.created_at.localeCompare(b.created_at)
-  );
-  updateSyncStatus();
-}
-
-async function removePendingObservation(id) {
-  await idbDelete(OFFLINE_STORE_PENDING, id);
-  pendingObservations = pendingObservations.filter(record => record.id !== id);
-  updateSyncStatus();
-}
-
-async function syncPendingObservations() {
-  if (!navigator.onLine || !currentUser || !pendingObservations.length) return 0;
-
-  let synced = 0;
-  const queue = pendingObservations.slice();
-
-  for (const record of queue) {
-    if (record.created_by !== currentUser.id) continue;
-
-    const payload = {
-      id: record.id,
-      parcel_id: record.parcel_id,
-      pest: record.pest,
-      observed_on: record.observed_on,
-      captures: record.captures,
-      created_by: record.created_by
-    };
-
-    const { data, error } = await db
-      .from("piegeage_observations")
-      .insert(payload)
-      .select("id, parcel_id, pest, observed_on, captures, created_by, created_at")
-      .single();
-
-    if (!error || error.code === "23505") {
-      await removePendingObservation(record.id);
-
-      if (data && !observations.some(item => item.id === data.id)) {
-        observations.push(data);
-      }
-
-      synced += 1;
-      continue;
-    }
-
-    if (isNetworkError(error)) break;
-
-    console.warn("Relevé non synchronisé :", error);
-  }
-
-  observations.sort((a, b) =>
-    a.observed_on.localeCompare(b.observed_on) ||
-    a.created_at.localeCompare(b.created_at)
-  );
-
-  return synced;
-}
-
-async function syncPendingData() {
-  if (syncInProgress || !navigator.onLine || !currentUser) {
-    updateSyncStatus();
-    return;
-  }
-
-  if (!pendingParcels.length && !pendingObservations.length) {
-    updateSyncStatus();
-    return;
-  }
-
-  syncInProgress = true;
-
-  const parts = [];
-  if (pendingParcels.length) parts.push(`${pendingParcels.length} parcelle${pendingParcels.length > 1 ? "s" : ""}`);
-  if (pendingObservations.length) parts.push(`${pendingObservations.length} relevé${pendingObservations.length > 1 ? "s" : ""}`);
-
-  updateSyncStatus(`Synchronisation de ${parts.join(" · ")}…`, "syncing");
-
-  const syncedParcels = await syncPendingParcels();
-  const syncedObservations = await syncPendingObservations();
-
-  syncInProgress = false;
-
-  if (syncedParcels || syncedObservations) {
-    await saveCachedData();
-    populateYears();
-    populateFarms();
-    populateEntryFarms();
-    renderParcelList();
-    refresh();
-    showSyncSuccess(syncedParcels, syncedObservations);
-  } else {
-    updateSyncStatus();
-  }
-}
-
-function configReady() {
-  const c = window.SAM_CONFIG || {};
-  return Boolean(c.SUPABASE_URL && c.SUPABASE_ANON_KEY);
-}
+const VARIETIES = [
+  { id: 'gala', label: 'Gala', model: 'gala' },
+  { id: 'golden', label: 'Golden Delicious', model: 'generic' },
+  { id: 'pinklady', label: 'Cripps Pink / Pink Lady', model: 'pinklady' },
+  { id: 'joya', label: 'Joya', model: 'generic' },
+  { id: 'reine', label: 'Reine des reinettes', model: 'generic' },
+  { id: 'granny', label: 'Granny Smith', model: 'generic' },
+  { id: 'ariane', label: 'Ariane', model: 'generic' },
+  { id: 'dalinette', label: 'Dalinette', model: 'generic' },
+  { id: 'opal', label: 'Opal', model: 'generic' },
+  { id: 'other', label: 'Autre variété', model: 'generic' }
+];
+
+const els = {};
+let state = { parcels: [], activeParcelId: null };
+let activeWeather = null;
+let latestAnalysis = null;
+let deferredPrompt = null;
+let pendingLocation = null;
+let chartHoverState = null;
+let supabaseClient = null;
+let supabaseConfigured = false;
+let isAdmin = false;
+let configFormMode = 'edit';
+let isSyncingPending = false;
+
+clearLegacyParcelStorage();
+window.addEventListener('DOMContentLoaded', init);
 
 async function init() {
-  if (!configReady()) {
-    setMessage($("globalMessage"), "Configuration Supabase absente dans config.js.", true);
-    return;
-  }
+  bindElements();
+  clearLegacyParcelStorage();
+  populateVarieties();
+  populateStages();
+  bindEvents();
+  initOfflineSync();
+  initAuthToggle();
+  initInstallButton();
+  normalizeState();
+  registerServiceWorker();
+  await initSupabase();
+  if (supabaseConfigured) await loadRemoteData();
+  if (navigator.onLine) await syncPendingObservations();
+  renderExploitationSelect();
+  renderParcelSelect();
+  loadParcelIntoForm();
+  loadCachedWeather();
+  setEditMode();
+  if (state.parcels.length) refreshWeather(false);
+}
 
-  db = window.supabase.createClient(
-    window.SAM_CONFIG.SUPABASE_URL,
-    window.SAM_CONFIG.SUPABASE_ANON_KEY
-  );
+function bindElements() {
+  [
+    'exploitationSelect','parcelSelect','activeVariety','activeWeatherLocation','activeStart','dataModeBadge',
+    'dashboardTabBtn','historyTabBtn','dashboardView','historyView',
+    'exploitation','parcelName','variety','otherVarietyField','otherVarietyName','baseTemp','varietyInfoText','baseTempInfoText','modelDescription',
+    'locationSearch','searchLocationBtn','locationResults','selectedLocation','editStatus','configPanel','configurationBtn','closeConfigBtn','configEyebrow',
+    'saveParcelBtn','newParcelBtn','deleteParcelBtn',
+    'stageMain','stageBbch','gddTotal','nextStage','nextDate','calibrationNotice',
+    'alertsSection','alertsList','observationDate','observationStage','observationPercentage','addObservationBtn','observationsList',
+    'refreshBtn','weatherStatus','forecastTableWrap','forecastBody',
+    'stageHistoryStatus','stageHistoryWrap','stageHistoryBody',
+    'chartCurrentGdd','chartNextThreshold','chartForecastEnd','gddChartStatus','gddChart','chartWrap','chartTooltip',
+    'toast','exportStagesBtn',
+    'loginForm','loggedInBox','loggedInEmail','authEmail','authPassword','loginBtn','logoutBtn','authStatus','authToggleButton','authCard','installCard','installButton','installMessage'
+  ].forEach(id => els[id] = document.getElementById(id));
+}
 
-  const { data: { session } } = await db.auth.getSession();
-  currentUser = session?.user || null;
-  await loadPendingParcels();
-  await loadPendingObservations();
-  renderAuth();
-
-  db.auth.onAuthStateChange(async (_event, session) => {
-    currentUser = session?.user || null;
-    await loadPendingParcels();
-    await loadPendingObservations();
-    renderAuth();
-
-    if (currentUser && navigator.onLine) {
-      await syncPendingData();
-    }
+function bindEvents() {
+  els.exploitationSelect.addEventListener('change', handleExploitationChange);
+  els.parcelSelect.addEventListener('change', async () => {
+    state.activeParcelId = els.parcelSelect.value;
+    persistState();
+    configFormMode = 'edit';
+    loadParcelIntoForm();
+    if (!els.configPanel.classList.contains('hidden')) updateConfigPanelMode();
+    loadCachedWeather();
+    await refreshWeather(false);
   });
+  els.configurationBtn.addEventListener('click', openConfiguration);
+  els.closeConfigBtn.addEventListener('click', closeConfiguration);
+  els.saveParcelBtn.addEventListener('click', saveParcelFromForm);
+  els.newParcelBtn.addEventListener('click', openNewParcel);
+  els.deleteParcelBtn.addEventListener('click', deleteParcel);
+  els.addObservationBtn.addEventListener('click', addObservation);
+  els.refreshBtn.addEventListener('click', () => refreshWeather(true));
+  els.dashboardTabBtn.addEventListener('click', () => switchTab('dashboard'));
+  els.historyTabBtn.addEventListener('click', () => switchTab('history'));
+  els.exportStagesBtn.addEventListener('click', exportStageTable);
+  [...document.querySelectorAll('.info-btn')].forEach(btn => btn.addEventListener('click', () => toggleInfo(btn.dataset.info)));
+  els.variety.addEventListener('change', () => updateModelUi(true));
+  els.searchLocationBtn.addEventListener('click', searchLocations);
+  els.locationSearch.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); searchLocations(); } });
+  els.locationResults.addEventListener('change', selectLocationResult);
+  els.gddChart.addEventListener('pointermove', handleChartPointer);
+  els.gddChart.addEventListener('pointerdown', handleChartPointer);
+  els.gddChart.addEventListener('pointerleave', hideChartTooltip);
 
-  await loadData();
-}
-
-function renderAuth() {
-  const connected = Boolean(currentUser);
-
-  $("loginForm").classList.toggle("hidden", connected);
-  $("connectedBlock").classList.toggle("hidden", !connected);
-  $("editActions").hidden = !connected;
-  $("connectedEmail").textContent = currentUser?.email || "";
-
-  const actionHeader = $("historyActionHeader");
-  if (actionHeader) actionHeader.classList.toggle("hidden", !connected);
-
-  if (!connected) {
-    $("loginPassword").value = "";
-  }
-
-  renderHistory();
-}
-
-async function login(event) {
-  if (event) event.preventDefault();
-
-  const email = $("loginEmail").value.trim();
-  const password = $("loginPassword").value;
-  setMessage($("loginMessage"));
-
-  if (!email || !password) {
-    setMessage($("loginMessage"), "Renseignez l’adresse mail et le mot de passe.", true);
-    return;
-  }
-
-  const submitButton = $("loginForm").querySelector("button[type='submit']");
-  submitButton.disabled = true;
-
-  const { error } = await db.auth.signInWithPassword({ email, password });
-
-  submitButton.disabled = false;
-
-  if (error) {
-    setMessage(
-      $("loginMessage"),
-      "Connexion impossible. Vérifiez l’adresse mail et le mot de passe.",
-      true
-    );
-    return;
-  }
-
-  setMessage($("loginMessage"));
-  $("loginEmail").value = "";
-  $("loginPassword").value = "";
-  closeMobileAuthCard();
-}
-
-async function logout() {
-  await db.auth.signOut();
-  closeMobileAuthCard();
-}
-
-async function loadData() {
-  setMessage($("globalMessage"), "Chargement…");
-
-  const cached = await loadCachedData();
-
-  if (!navigator.onLine && cached) {
-    parcels = cached.parcels || [];
-    observations = cached.observations || [];
-    await loadPendingParcels();
-    await loadPendingObservations();
-
-    populateYears();
-    populateFarms();
-    populateEntryFarms();
-    refresh();
-    setMessage($("globalMessage"));
-    updateSyncStatus();
-    return;
-  }
-
-  const [p, o] = await Promise.all([
-    db.from("piegeage_parcels")
-      .select("id, exploitation, name, variety, area_ha, created_by, created_at")
-      .order("exploitation")
-      .order("name"),
-    db.from("piegeage_observations")
-      .select("id, parcel_id, pest, observed_on, captures, created_by, created_at")
-      .order("observed_on")
-      .order("created_at")
-  ]);
-
-  if (p.error || o.error) {
-    if (cached && (isNetworkError(p.error) || isNetworkError(o.error))) {
-      parcels = cached.parcels || [];
-      observations = cached.observations || [];
-      await loadPendingParcels();
-      await loadPendingObservations();
-
-      populateYears();
-      populateFarms();
-      populateEntryFarms();
-      refresh();
-      setMessage($("globalMessage"));
-      updateSyncStatus();
-      return;
-    }
-
-    setMessage(
-      $("globalMessage"),
-      `Impossible de charger les données : ${p.error?.message || o.error?.message}`,
-      true
-    );
-    updateSyncStatus();
-    return;
-  }
-
-  parcels = p.data || [];
-  observations = o.data || [];
-  await loadPendingParcels();
-  await loadPendingObservations();
-  await saveCachedData();
-
-  populateYears();
-  populateFarms();
-  populateEntryFarms();
-  refresh();
-  setMessage($("globalMessage"));
-  updateSyncStatus();
-
-  if (currentUser && (pendingParcels.length || pendingObservations.length)) {
-    await syncPendingData();
-  }
-}
-
-function populateYears(preferred = null) {
-  const select = $("yearSelect");
-  const current = String(new Date().getFullYear());
-  const previous = preferred || select.value;
-  const years = [...new Set([current, ...displayObservations().map(o => o.observed_on.slice(0, 4))])]
-    .sort((a, b) => b.localeCompare(a));
-
-  select.innerHTML = "";
-  years.forEach(y => select.add(new Option(y, y)));
-  select.value = years.includes(previous) ? previous : years[0];
-}
-
-function populateFarms(preferred = null) {
-  const select = $("farmSelect");
-  const previous = preferred || select.value;
-  const farms = [...new Set(displayParcels().map(p => p.exploitation))].sort((a, b) => a.localeCompare(b, "fr"));
-
-  select.innerHTML = "";
-  if (!farms.length) {
-    select.add(new Option("Aucune exploitation", ""));
-    select.disabled = true;
-    populateParcelFilter();
-    return;
-  }
-
-  select.disabled = false;
-  farms.forEach(f => select.add(new Option(f, f)));
-  select.value = farms.includes(previous) ? previous : farms[0];
-  populateParcelFilter();
-}
-
-function populateParcelFilter(preferred = null) {
-  const select = $("parcelSelect");
-  const farm = $("farmSelect").value;
-  const previous = preferred || select.value;
-  const list = displayParcels()
-    .filter(p => p.exploitation === farm)
-    .sort((a, b) => a.name.localeCompare(b.name, "fr"));
-
-  select.innerHTML = "";
-  if (!list.length) {
-    select.add(new Option("Aucune parcelle", ""));
-    select.disabled = true;
-    return;
-  }
-
-  select.disabled = false;
-  select.add(new Option("Toutes les parcelles", "all"));
-  list.forEach(p => select.add(new Option(p.name, p.id)));
-  select.value = previous === "all" || list.some(p => p.id === previous) ? previous : "all";
-}
-
-function populateEntryFarms(preferredFarm = null, preferredParcel = null) {
-  const select = $("entryFarm");
-  const farms = [...new Set(displayParcels().map(p => p.exploitation))].sort((a, b) => a.localeCompare(b, "fr"));
-  const previous = preferredFarm || select.value;
-
-  select.innerHTML = "";
-  if (!farms.length) {
-    select.add(new Option("Aucune exploitation", ""));
-    select.disabled = true;
-    populateEntryParcels();
-    return;
-  }
-
-  select.disabled = false;
-  farms.forEach(f => select.add(new Option(f, f)));
-  select.value = farms.includes(previous) ? previous : farms[0];
-  populateEntryParcels(preferredParcel);
-}
-
-function populateEntryParcels(preferred = null) {
-  const select = $("entryParcel");
-  const farm = $("entryFarm").value;
-  const list = displayParcels()
-    .filter(p => p.exploitation === farm)
-    .sort((a, b) => a.name.localeCompare(b.name, "fr"));
-
-  select.innerHTML = "";
-  if (!list.length) {
-    select.add(new Option("Aucune parcelle", ""));
-    select.disabled = true;
-    return;
-  }
-
-  select.disabled = false;
-  list.forEach(p => select.add(new Option(p.name, p.id)));
-  if (preferred && list.some(p => p.id === preferred)) select.value = preferred;
-}
-
-function activeParcels() {
-  const farm = $("farmSelect").value;
-  const parcelValue = $("parcelSelect").value;
-  const farmParcels = displayParcels().filter(p => p.exploitation === farm);
-  return parcelValue === "all"
-    ? farmParcels
-    : farmParcels.filter(p => p.id === parcelValue);
-}
-
-function activeObservations() {
-  const ids = new Set(activeParcels().map(p => p.id));
-  const pest = $("pestSelect").value;
-  const year = $("yearSelect").value;
-
-  return displayObservations()
-    .filter(o =>
-      ids.has(o.parcel_id) &&
-      (pest === "all" || o.pest === pest) &&
-      o.observed_on.startsWith(year)
-    )
-    .sort((a, b) => a.observed_on.localeCompare(b.observed_on) || a.created_at.localeCompare(b.created_at));
-}
-
-function aggregateParcelRecords(records, mode) {
-  const byDate = new Map();
-  records.forEach(r => {
-    if (!byDate.has(r.observed_on)) byDate.set(r.observed_on, []);
-    byDate.get(r.observed_on).push(Number(r.captures));
+  els.loginForm.addEventListener('submit', event => {
+    event.preventDefault();
+    loginSupabase();
   });
-
-  return [...byDate.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, values]) => ({
-      date,
-      value: mode === "average"
-        ? values.reduce((s, v) => s + v, 0) / values.length
-        : values.reduce((s, v) => s + v, 0)
-    }));
-}
-
-function buildParcelSeries() {
-  const mode = $("calculationSelect").value;
-  const pest = $("pestSelect").value;
-  const year = $("yearSelect").value;
-  const parcelsToShow = activeParcels();
-
-  if (pest === "all") {
-    return parcelsToShow.flatMap(parcel =>
-      Object.keys(PESTS).map(pestKey => {
-        const records = displayObservations().filter(
-          o =>
-            o.parcel_id === parcel.id &&
-            o.pest === pestKey &&
-            o.observed_on.startsWith(year)
-        );
-
-        return {
-          parcel,
-          pest: pestKey,
-          label: `${parcel.name} — ${PESTS[pestKey]}`,
-          points: aggregateParcelRecords(records, mode)
-        };
-      })
-    ).filter(series => series.points.length);
+  els.logoutBtn.addEventListener('click', logoutSupabase);
+  if (els.authToggleButton) {
+    els.authToggleButton.addEventListener('click', toggleAuthCard);
   }
-
-  return parcelsToShow.map(parcel => {
-    const records = displayObservations().filter(
-      o => o.parcel_id === parcel.id && o.pest === pest && o.observed_on.startsWith(year)
-    );
-
-    return {
-      parcel,
-      pest,
-      label: parcel.name,
-      points: aggregateParcelRecords(records, mode)
-    };
-  }).filter(series => series.points.length);
-}
-
-function cumulativePoints(points) {
-  let total = 0;
-  return points.map(p => ({ date: p.date, value: (total += p.value) }));
-}
-
-function metricSeries() {
-  const mode = $("calculationSelect").value;
-  const records = activeObservations();
-  const grouped = new Map();
-
-  records.forEach(r => {
-    if (!grouped.has(r.observed_on)) grouped.set(r.observed_on, []);
-    grouped.get(r.observed_on).push(Number(r.captures));
-  });
-
-  return [...grouped.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, values]) => ({
-      date,
-      value: mode === "average"
-        ? values.reduce((s, v) => s + v, 0) / values.length
-        : values.reduce((s, v) => s + v, 0)
-    }));
-}
-
-function trend(values) {
-  if (values.length < 2) return "À compléter";
-  const last = values.at(-1);
-  const base = values.length >= 3 ? (values.at(-2) + values.at(-3)) / 2 : values.at(-2);
-  if (Math.abs(last - base) < 0.5) return "Stable";
-  return last > base ? "En augmentation" : "En diminution";
-}
-
-function refresh() {
-  renderMetrics();
-  renderChart();
-  renderHistory();
-}
-
-function renderMetrics() {
-  const records = activeObservations();
-  const series = metricSeries();
-  const values = series.map(x => x.value);
-  const last = series.at(-1);
-
-  $("lastValue").textContent = last ? `${formatNumber(last.value)} captures` : "—";
-  $("lastDate").textContent = last ? `Relevé du ${formatDate(last.date)}` : "Aucune donnée";
-  $("trendValue").textContent = trend(values);
-  $("seasonTotal").textContent = values.length ? formatNumber(values.reduce((s, v) => s + v, 0)) : "—";
-  $("seasonUnit").textContent = $("calculationSelect").value === "average"
-    ? "somme des moyennes par date"
-    : "captures cumulées";
-  $("recordCount").textContent = String(records.length);
-
-  const latestCreated = records.slice().sort((a, b) => a.created_at.localeCompare(b.created_at)).at(-1);
-  $("lastUpdate").textContent = latestCreated ? `Dernière saisie : ${formatDateTime(latestCreated.created_at)}` : "Aucune mise à jour";
-}
-
-function renderChart() {
-  if (chart) {
-    chart.destroy();
-    chart = null;
-  }
-
-  const canvas = $("trapChart");
-  const empty = $("chartEmpty");
-  const series = buildParcelSeries();
-  const display = $("displaySelect").value;
-
-  if (!series.length) {
-    canvas.style.display = "none";
-    empty.style.display = "grid";
-    empty.textContent = "Aucune donnée pour cette sélection.";
-    $("chartTitle").textContent = "Captures par relevé";
-    return;
-  }
-
-  canvas.style.display = "block";
-  empty.style.display = "none";
-
-  const allDates = [...new Set(
-    series.flatMap(s => (display === "cumulative" ? cumulativePoints(s.points) : s.points).map(p => p.date))
-  )].sort();
-
-  const datasets = series.map((s, index) => {
-    const points = display === "cumulative" ? cumulativePoints(s.points) : s.points;
-    const map = new Map(points.map(p => [p.date, p.value]));
-    return {
-      label: s.label || s.parcel.name,
-      data: allDates.map(date => map.has(date) ? map.get(date) : null),
-      borderColor: COLORS[index % COLORS.length],
-      backgroundColor: COLORS[index % COLORS.length],
-      tension: 0.22,
-      pointRadius: 4,
-      pointHoverRadius: 6,
-      borderWidth: 2.4,
-      spanGaps: true
-    };
-  });
-
-  const selectedPest = $("pestSelect").value;
-  const pestLabel = selectedPest === "all" ? "Tous les ravageurs" : PESTS[selectedPest];
-
-  $("chartTitle").textContent = display === "cumulative"
-    ? `Cumul saisonnier — ${pestLabel}`
-    : `Dynamique des captures — ${pestLabel}`;
-
-  chart = new Chart(canvas, {
-    type: "line",
-    data: {
-      labels: allDates.map(formatDate),
-      datasets
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: "nearest", intersect: false },
-      plugins: {
-        legend: {
-          display: datasets.length > 1,
-          position: "bottom",
-          labels: { usePointStyle: true, boxWidth: 8, padding: 17 }
-        }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 12 } },
-        y: {
-          beginAtZero: true,
-          title: {
-            display: true,
-            text: display === "cumulative"
-              ? "Cumul des captures"
-              : ($("calculationSelect").value === "average" ? "Moyenne des captures" : "Total des captures")
-          },
-          grid: { color: "rgba(102,113,123,.13)" }
-        }
-      }
-    }
+  window.addEventListener('resize', () => {
+    drawChart();
+    syncMobileUi();
   });
 }
 
-function renderHistory() {
-  const tbody = $("historyBody");
-  if (!tbody) return;
+function isPhoneLayout() {
+  return window.matchMedia('(max-width: 720px)').matches;
+}
 
-  tbody.innerHTML = "";
-  const records = activeObservations().slice().sort(
-    (a, b) => b.observed_on.localeCompare(a.observed_on) || b.created_at.localeCompare(a.created_at)
-  );
-
-  const connected = Boolean(currentUser);
-  const actionHeader = $("historyActionHeader");
-  if (actionHeader) actionHeader.classList.toggle("hidden", !connected);
-
-  if (!records.length) {
-    const row = document.createElement("tr");
-    row.className = "empty-row";
-    row.innerHTML = `<td colspan="${connected ? 6 : 5}">Aucun relevé enregistré pour cette sélection.</td>`;
-    tbody.appendChild(row);
-    return;
+function syncMobileUi() {
+  if (!els.authCard || !els.authToggleButton) return;
+  if (isPhoneLayout()) {
+    const open = els.authCard.classList.contains('open');
+    els.authToggleButton.classList.remove('hidden');
+    els.authToggleButton.setAttribute('aria-expanded', String(open));
+    if (!open) els.authCard.classList.remove('open');
+  } else {
+    els.authCard.classList.remove('open');
+    els.authCard.style.display = '';
+    els.authToggleButton.classList.add('hidden');
+    els.authToggleButton.setAttribute('aria-expanded', 'false');
   }
+}
 
-  const parcelMap = new Map(displayParcels().map(p => [p.id, p.name]));
+function toggleAuthCard() {
+  if (!els.authCard || !isPhoneLayout()) return;
+  const open = els.authCard.classList.toggle('open');
+  els.authToggleButton.setAttribute('aria-expanded', String(open));
+}
 
-  records.forEach(record => {
-    const row = document.createElement("tr");
-    if (record._pending) row.classList.add("pending-row");
+function initAuthToggle() {
+  syncMobileUi();
+}
 
-    const values = [
-      ["Date", formatDate(record.observed_on)],
-      ["Parcelle", parcelMap.get(record.parcel_id) || "—"],
-      ["Ravageur", PESTS[record.pest] || record.pest],
-      ["Captures", formatNumber(record.captures, 0)],
-      ["Enregistré", record._pending ? "En attente de synchronisation" : formatDateTime(record.created_at)]
-    ];
+function toggleInfo(id) {
+  const box = document.getElementById(id);
+  if (box) box.classList.toggle('hidden');
+}
 
-    values.forEach(([label, text], index) => {
-      const td = document.createElement("td");
-      td.textContent = text;
-      td.dataset.label = label;
-      if (index === 3) td.style.fontWeight = "800";
-      row.appendChild(td);
-    });
+function populateVarieties() {
+  els.variety.innerHTML = VARIETIES.map(v => `<option value="${v.id}">${v.label}</option>`).join('');
+}
 
-    if (connected) {
-      const actionCell = document.createElement("td");
-      actionCell.dataset.label = "Action";
-      actionCell.className = "history-action-cell";
+function populateStages() {
+  els.observationStage.innerHTML = STAGE_META.map(stage => `<option value="${stage.id}">${stage.label}</option>`).join('');
+}
 
-      const deleteButton = document.createElement("button");
-      deleteButton.type = "button";
-      deleteButton.className = "delete-row-button";
-      deleteButton.textContent = "Supprimer";
-      deleteButton.addEventListener("click", () => deleteObservation(record));
+function clearLegacyParcelStorage() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    LEGACY_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
+  } catch (error) {
+    console.warn('Nettoyage du stockage local impossible', error);
+  }
+}
 
-      actionCell.appendChild(deleteButton);
-      row.appendChild(actionCell);
-    }
+function persistState() {
+  // Les parcelles et observations ont Supabase comme source unique de vérité.
+  // Aucun historique de parcelle n'est conservé dans le navigateur.
+}
 
-    tbody.appendChild(row);
+function activeParcel() {
+  return state.parcels.find(p => p.id === state.activeParcelId) || state.parcels[0];
+}
+
+function normalizeState() {
+  state.parcels.forEach(p => {
+    p.observations = Array.isArray(p.observations) ? p.observations : [];
+    p.exploitation = p.exploitation || 'SudExpé Marsillargues';
+    p.name = p.name || 'Parcelle';
+    if (p.variety === 'opale') p.variety = 'opal';
+    p.variety = p.variety || 'other';
+    p.customVarietyName = p.customVarietyName || '';
+    const model = getModelForVariety(p.variety);
+    p.baseTemp = model.fixedBase ? model.baseTemp : (typeof p.baseTemp === 'number' ? p.baseTemp : DEFAULT_BASE_TEMP);
+    p.weatherLocation = normalizeLocation(p.weatherLocation || DEFAULT_LOCATION);
   });
+  if (!state.activeParcelId || !state.parcels.some(p => p.id === state.activeParcelId)) state.activeParcelId = state.parcels[0]?.id || null;
+  persistState();
 }
 
-async function deleteObservation(record) {
-  if (!currentUser) return;
-
-  const confirmed = window.confirm(
-    record._pending
-      ? "Supprimer ce relevé en attente de synchronisation ?"
-      : "Supprimer définitivement ce relevé ?"
-  );
-
-  if (!confirmed) return;
-
-  if (record._pending) {
-    await removePendingObservation(record.id);
-    refresh();
-    setMessage($("globalMessage"), "Relevé supprimé.");
+function renderExploitationSelect() {
+  const current = activeParcel()?.exploitation || '';
+  const values = [...new Set(state.parcels.map(p => p.exploitation).filter(Boolean))].sort((a,b) => a.localeCompare(b, 'fr'));
+  if (!values.length) {
+    els.exploitationSelect.innerHTML = '<option value="">Aucune exploitation</option>';
+    els.exploitationSelect.disabled = true;
     return;
   }
-
-  const { error } = await db
-    .from("piegeage_observations")
-    .delete()
-    .eq("id", record.id);
-
-  if (error) {
-    setMessage(
-      $("globalMessage"),
-      `Suppression impossible : ${error.message}`,
-      true
-    );
-    return;
-  }
-
-  observations = observations.filter(item => item.id !== record.id);
-  await saveCachedData();
-  refresh();
-  setMessage($("globalMessage"), "Relevé supprimé.");
-
-  window.setTimeout(() => {
-    if ($("globalMessage").textContent === "Relevé supprimé.") {
-      setMessage($("globalMessage"));
-    }
-  }, 3000);
+  els.exploitationSelect.disabled = false;
+  els.exploitationSelect.innerHTML = values.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+  els.exploitationSelect.value = values.includes(current) ? current : values[0];
 }
 
-async function createParcel(event) {
-  event.preventDefault();
-  if (!currentUser) return;
-
-  setMessage($("parcelMessage"));
-
-  const exploitation = $("parcelFarm").value.trim();
-  const name = $("parcelName").value.trim();
-  const variety = $("parcelVariety").value.trim();
-  const area = Number($("parcelArea").value);
-
-  if (!exploitation || !name || !variety || !Number.isFinite(area) || area < 0) {
-    setMessage($("parcelMessage"), "Renseignez tous les champs.", true);
+function renderParcelSelect() {
+  const exploitation = els.exploitationSelect.value || activeParcel()?.exploitation || '';
+  const parcels = state.parcels.filter(p => p.exploitation === exploitation);
+  if (!parcels.length) {
+    els.parcelSelect.innerHTML = '<option value="">Aucune parcelle</option>';
+    els.parcelSelect.disabled = true;
+    state.activeParcelId = null;
     return;
   }
+  els.parcelSelect.disabled = false;
+  els.parcelSelect.innerHTML = parcels.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+  let selected = parcels.find(p => p.id === state.activeParcelId) || parcels[0];
+  state.activeParcelId = selected.id;
+  els.parcelSelect.value = selected.id;
+}
 
-  const duplicate = displayParcels().some(parcel =>
-    parcel.exploitation.trim().toLowerCase() === exploitation.toLowerCase() &&
-    parcel.name.trim().toLowerCase() === name.toLowerCase()
-  );
+async function handleExploitationChange() {
+  const parcels = state.parcels.filter(p => p.exploitation === els.exploitationSelect.value);
+  if (!parcels.length) return;
+  state.activeParcelId = parcels[0].id;
+  persistState();
+  renderParcelSelect();
+  configFormMode = 'edit';
+  loadParcelIntoForm();
+  if (!els.configPanel.classList.contains('hidden')) updateConfigPanelMode();
+  loadCachedWeather();
+  await refreshWeather(false);
+}
 
-  if (duplicate) {
-    setMessage($("parcelMessage"), "Cette parcelle existe déjà pour cette exploitation.", true);
+function loadParcelIntoForm() {
+  const p = activeParcel();
+  if (!p) {
+    els.exploitation.value = '';
+    els.parcelName.value = '';
+    els.variety.value = 'gala';
+    els.otherVarietyName.value = '';
+    els.baseTemp.value = MODEL_CONFIG.gala.baseTemp;
+    els.activeVariety.textContent = '—';
+    els.activeWeatherLocation.textContent = '—';
+    els.activeStart.textContent = '—';
+    els.observationsList.innerHTML = '<p class="hint">Aucune parcelle enregistrée.</p>';
+    activeWeather = null;
+    latestAnalysis = null;
+    resetDashboard('Aucune parcelle enregistrée');
+    renderStageHistory(null);
+    drawChart();
+    setEditMode();
     return;
   }
+  els.exploitation.value = p.exploitation || '';
+  els.parcelName.value = p.name || '';
+  els.variety.value = p.variety || 'other';
+  els.otherVarietyName.value = p.customVarietyName || '';
+  els.baseTemp.value = p.baseTemp ?? getModelForVariety(p.variety).baseTemp;
+  pendingLocation = normalizeLocation(p.weatherLocation || DEFAULT_LOCATION);
+  renderSelectedLocation();
+  els.locationSearch.value = '';
+  els.locationResults.classList.add('hidden');
+  updateModelUi(false);
+  updateActiveSummary();
+  renderObservations();
+  renderPhenology();
+  setEditMode();
+}
 
-  const localParcel = createOfflineParcel({
+function updateModelUi(resetBase) {
+  const variety = VARIETIES.find(v => v.id === els.variety.value) || VARIETIES[VARIETIES.length - 1];
+  const model = MODEL_CONFIG[variety.model] || MODEL_CONFIG.generic;
+  const isOther = variety.id === 'other';
+  els.otherVarietyField.classList.toggle('hidden', !isOther);
+  if (!isOther && resetBase) els.otherVarietyName.value = '';
+  if (model.fixedBase) {
+    els.baseTemp.value = model.baseTemp;
+    els.baseTemp.disabled = true;
+  } else {
+    els.baseTemp.disabled = !canEdit();
+    if (resetBase) els.baseTemp.value = DEFAULT_BASE_TEMP;
+  }
+
+  els.modelDescription.textContent = model.fixedBase
+    ? 'Le calcul utilise les seuils variétaux intégrés pour cette variété, recalables par les observations terrain.'
+    : 'Le calcul utilise les seuils génériques du pommier, recalables par les observations terrain.';
+  els.varietyInfoText.textContent = model.fixedBase
+    ? `${variety.label} dispose d’un modèle variétal intégré.`
+    : 'En l’absence de modèle variétal validé et compatible avec tous les stades suivis, le calcul utilise le modèle générique du pommier.';
+  els.baseTempInfoText.textContent = model.fixedBase
+    ? `Le modèle scientifique de ${variety.label} utilise une température de base de ${String(model.baseTemp).replace('.', ',')} °C (43 °F). Cette valeur est imposée pour conserver la cohérence avec les seuils variétaux publiés.`
+    : 'La température de base est le seuil sous lequel le développement du pommier est considéré comme très faible. La valeur de 5 °C est utilisée pour calculer simplement l’accumulation de chaleur depuis le stade C.';
+}
+
+function updateActiveSummary() {
+  const p = activeParcel();
+  if (!p) return;
+  const variety = p.variety === 'other' ? (p.customVarietyName || 'Autre variété') : (VARIETIES.find(v => v.id === p.variety)?.label || '—');
+  const loc = normalizeLocation(p.weatherLocation || DEFAULT_LOCATION);
+  els.activeVariety.textContent = variety;
+  els.activeWeatherLocation.textContent = locationLabel(loc);
+  const stageCDate = getReachedStageCDate(p);
+  els.activeStart.textContent = stageCDate ? `Stade C observé le ${formatDate(stageCDate)}` : 'Stade C non renseigné';
+}
+
+async function saveParcelFromForm() {
+  if (!canEdit()) return toast('Connexion nécessaire pour modifier les données.');
+
+  const exploitation = els.exploitation.value.trim();
+  const name = els.parcelName.value.trim();
+  if (!exploitation) return toast('Renseignez l’exploitation.');
+  if (!name) return toast('Renseignez le nom de la parcelle.');
+
+  const variety = els.variety.value;
+  const customVarietyName = variety === 'other' ? els.otherVarietyName.value.trim() : '';
+  if (variety === 'other' && !customVarietyName) return toast('Renseignez le nom de la variété.');
+  const model = getModelForVariety(variety);
+  const wasNew = configFormMode === 'new';
+  const current = activeParcel();
+  const candidate = {
+    id: wasNew ? uid() : current?.id,
     exploitation,
     name,
     variety,
-    area
-  });
+    customVarietyName,
+    weatherLocation: normalizeLocation(pendingLocation || DEFAULT_LOCATION),
+    baseTemp: model.fixedBase ? model.baseTemp : clampNumber(parseFloat(els.baseTemp.value), 0, 15, DEFAULT_BASE_TEMP),
+    observations: current?.observations || []
+  };
+  if (!candidate.id) return toast('Aucune parcelle active.');
 
-  let savedOnline = false;
-  let savedParcel = localParcel;
-
-  if (navigator.onLine) {
-    const { data, error } = await db
-      .from("piegeage_parcels")
-      .insert({
-        id: localParcel.id,
-        exploitation: localParcel.exploitation,
-        name: localParcel.name,
-        variety: localParcel.variety,
-        area_ha: localParcel.area_ha,
-        created_by: localParcel.created_by
-      })
-      .select("id, exploitation, name, variety, area_ha, created_by, created_at")
-      .single();
-
-    if (!error) {
-      parcels.push(data);
-      savedOnline = true;
-      savedParcel = data;
-      await saveCachedData();
-    } else if (!isNetworkError(error)) {
-      setMessage(
-        $("parcelMessage"),
-        error.code === "23505"
-          ? "Cette parcelle existe déjà pour cette exploitation."
-          : `Création impossible : ${error.message}`,
-        true
-      );
-      return;
-    }
-  }
-
-  if (!savedOnline) {
-    await queueParcel(localParcel);
-  }
-
-  $("parcelForm").reset();
-
-  populateFarms(savedParcel.exploitation);
-  populateEntryFarms(savedParcel.exploitation, savedParcel.id);
-  $("parcelSelect").value = savedParcel.id;
-  renderParcelList();
-  refresh();
-
-  setMessage(
-    $("parcelMessage"),
-    savedOnline
-      ? "Parcelle créée."
-      : "Parcelle créée hors connexion. Elle sera synchronisée automatiquement."
-  );
-
-  updateSyncStatus();
+  const saved = await syncParcelToSupabase(candidate);
+  if (!saved) return;
+  await loadRemoteData();
+  if (state.parcels.some(p => p.id === candidate.id)) state.activeParcelId = candidate.id;
+  renderExploitationSelect();
+  renderParcelSelect();
+  configFormMode = 'edit';
+  loadParcelIntoForm();
+  closeConfiguration();
+  loadCachedWeather();
+  await refreshWeather(true);
+  toast(wasNew ? 'Nouvelle parcelle enregistrée.' : 'Parcelle enregistrée.');
 }
 
-async function createObservation(event) {
-  event.preventDefault();
-  if (!currentUser) return;
+function openConfiguration() {
+  configFormMode = 'edit';
+  switchTab('dashboard');
+  loadParcelIntoForm();
+  updateConfigPanelMode();
+  els.configPanel.classList.remove('hidden');
+  els.configPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
-  setMessage($("observationMessage"));
+function openNewParcel() {
+  if (!canEdit()) return toast('Connexion nécessaire pour créer une parcelle.');
+  configFormMode = 'new';
+  switchTab('dashboard');
+  els.exploitation.value = els.exploitationSelect.value || '';
+  els.parcelName.value = '';
+  els.variety.value = 'gala';
+  els.otherVarietyName.value = '';
+  pendingLocation = { ...DEFAULT_LOCATION };
+  els.locationSearch.value = '';
+  els.locationResults.classList.add('hidden');
+  renderSelectedLocation();
+  updateModelUi(true);
+  updateConfigPanelMode();
+  els.configPanel.classList.remove('hidden');
+  els.configPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  setEditMode();
+}
 
-  const parcelId = $("entryParcel").value;
-  const pest = $("entryPest").value;
-  const date = $("observationDate").value;
-  const captures = Number($("observationCount").value);
+function closeConfiguration() {
+  els.configPanel.classList.add('hidden');
+  configFormMode = 'edit';
+  loadParcelIntoForm();
+}
 
-  if (!parcelId || !pest || !date || !Number.isInteger(captures) || captures < 0) {
-    setMessage($("observationMessage"), "Renseignez tous les champs correctement.", true);
+function updateConfigPanelMode() {
+  const isNew = configFormMode === 'new';
+  const title = document.getElementById('config-title');
+  if (els.configEyebrow) els.configEyebrow.textContent = isNew ? 'Nouvelle parcelle' : 'Configuration';
+  if (title) title.textContent = isNew ? 'Paramètres de la nouvelle parcelle' : 'Paramètres de la parcelle active';
+  els.saveParcelBtn.textContent = isNew ? 'Enregistrer la nouvelle parcelle' : 'Enregistrer les modifications';
+  els.deleteParcelBtn.classList.toggle('hidden', isNew);
+}
+
+async function deleteParcel() {
+  if (!canEdit()) return toast('Connexion nécessaire pour supprimer une parcelle.');
+  const id = state.activeParcelId;
+  if (!id) return toast('Aucune parcelle à supprimer.');
+  const { error } = await supabaseClient.from('parcels').delete().eq('id', id);
+  if (error) return toast(`Suppression impossible : ${error.message}`);
+  await loadRemoteData();
+  renderExploitationSelect();
+  renderParcelSelect();
+  loadParcelIntoForm();
+  if (state.parcels.length) {
+    loadCachedWeather();
+    await refreshWeather(false);
+  }
+  toast('Parcelle supprimée.');
+}
+
+async function addObservation() {
+  if (!canEdit()) return toast('Connexion nécessaire pour ajouter une observation.');
+  const p = activeParcel();
+  if (!p) return toast('Aucune parcelle active.');
+  const date = els.observationDate.value;
+  const stage = els.observationStage.value;
+  const percentage = Number(els.observationPercentage.value || 50);
+  if (!date) return toast('Choisissez une date.');
+  if (![25, 50, 75].includes(percentage)) return toast('Pourcentage invalide.');
+
+  const observation = { date, stage, percentage };
+  if (!navigator.onLine) {
+    queueOfflineObservation(p.id, observation);
+    mergePendingIntoState();
+    loadParcelIntoForm();
+    updateSyncBadge();
+    toast('Observation enregistrée hors connexion.');
     return;
   }
 
-  const localRecord = createOfflineObservation({
-    parcelId,
-    pest,
-    date,
-    captures
+  const obsSaved = await syncObservationToSupabase(p.id, observation, { queueOnNetworkError: true });
+  if (!obsSaved) return;
+  await loadRemoteData();
+  renderExploitationSelect();
+  renderParcelSelect();
+  loadParcelIntoForm();
+  loadCachedWeather();
+  await refreshWeather(true);
+  updateSyncBadge();
+  toast('Observation ajoutée.');
+}
+
+async function removeObservation(id) {
+  if (!canEdit()) return toast('Connexion nécessaire pour supprimer une observation.');
+  const p = activeParcel();
+  if (!p || !id) return;
+
+  if (String(id).startsWith('offline_')) {
+    removePendingObservation(id);
+    mergePendingIntoState();
+    loadParcelIntoForm();
+    updateSyncBadge();
+    toast('Observation hors connexion supprimée.');
+    return;
+  }
+
+  if (!navigator.onLine) return toast('La suppression d’une observation déjà synchronisée nécessite une connexion.');
+  const { error } = await supabaseClient.from('observations').delete().eq('id', id).eq('parcel_id', p.id);
+  if (error) return toast(`Suppression impossible : ${error.message}`);
+  await loadRemoteData();
+  renderExploitationSelect();
+  renderParcelSelect();
+  loadParcelIntoForm();
+  loadCachedWeather();
+  await refreshWeather(true);
+}
+
+function renderObservations() {
+  const p = activeParcel();
+  const obs = [...(p?.observations || [])].sort((a, b) => {
+    const byDate = b.date.localeCompare(a.date);
+    if (byDate) return byDate;
+    return (b.percentage || 50) - (a.percentage || 50);
   });
-
-  let savedOnline = false;
-
-  if (navigator.onLine) {
-    const { data, error } = await db
-      .from("piegeage_observations")
-      .insert({
-        id: localRecord.id,
-        parcel_id: localRecord.parcel_id,
-        pest: localRecord.pest,
-        observed_on: localRecord.observed_on,
-        captures: localRecord.captures,
-        created_by: localRecord.created_by
-      })
-      .select("id, parcel_id, pest, observed_on, captures, created_by, created_at")
-      .single();
-
-    if (!error) {
-      observations.push(data);
-      observations.sort((a, b) =>
-        a.observed_on.localeCompare(b.observed_on) ||
-        a.created_at.localeCompare(b.created_at)
-      );
-      savedOnline = true;
-      await saveCachedData();
-    } else if (!isNetworkError(error)) {
-      setMessage(
-        $("observationMessage"),
-        `Enregistrement impossible : ${error.message}`,
-        true
-      );
-      return;
-    }
-  }
-
-  if (!savedOnline) {
-    await queueObservation(localRecord);
-  }
-
-  populateYears(date.slice(0, 4));
-
-  const parcel = displayParcels().find(p => p.id === parcelId);
-  if (parcel) {
-    populateFarms(parcel.exploitation);
-    $("parcelSelect").value = parcel.id;
-  }
-
-  $("pestSelect").value = pest;
-  $("yearSelect").value = date.slice(0, 4);
-  $("observationCount").value = "";
-
-  refresh();
-
-  setMessage(
-    $("observationMessage"),
-    savedOnline
-      ? "Relevé enregistré."
-      : "Relevé enregistré hors connexion. Il sera synchronisé automatiquement."
-  );
-
-  if (!savedOnline) {
-    updateSyncStatus();
+  const editable = canEdit();
+  els.observationsList.innerHTML = obs.length ? obs.map(o => {
+    const stage = stageById(o.stage);
+    const percentage = Number(o.percentage || 50);
+    const del = editable ? `<button type="button" data-id="${o.id}" aria-label="Supprimer">✕</button>` : '<span></span>';
+    const pending = o.pending ? '<em class="sync-pending-label">À synchroniser</em>' : '';
+    return `<div class="observation-row ${o.pending ? 'pending-sync' : ''}"><span>${formatDate(o.date)}</span><strong>${percentage} % · ${stage ? stage.label : escapeHtml(o.stage)}${pending}</strong>${del}</div>`;
+  }).join('') : '<p class="hint">Aucune observation enregistrée.</p>';
+  if (editable) {
+    els.observationsList.querySelectorAll('button[data-id]').forEach(btn => btn.addEventListener('click', () => removeObservation(btn.dataset.id)));
   }
 }
 
-function exportCsv() {
-  const records = activeObservations();
-  const parcelMap = new Map(displayParcels().map(p => [p.id, p]));
-  const rows = [["Ravageur", "Année", "Exploitation", "Parcelle", "Variété", "Surface (ha)", "Date du relevé", "Captures"]];
+function getReachedStageCDate(parcel) {
+  const observation = [...(parcel?.observations || [])]
+    .filter(o => o.stage === 'C' && Number(o.percentage || 50) === 50)
+    .sort((a, b) => a.date.localeCompare(b.date))[0];
+  return observation?.date || null;
+}
 
-  records.forEach(r => {
-    const p = parcelMap.get(r.parcel_id);
-    rows.push([
-      PESTS[r.pest] || r.pest,
-      r.observed_on.slice(0, 4),
-      p?.exploitation || "",
-      p?.name || "",
-      p?.variety || "",
-      p?.area_ha ?? "",
-      r.observed_on,
-      r.captures
+function getThermalStartDate(parcel) {
+  const firstCObservation = [...(parcel?.observations || [])]
+    .filter(o => o.stage === 'C')
+    .sort((a, b) => a.date.localeCompare(b.date))[0];
+  return firstCObservation?.date || null;
+}
+
+function observationTargetGdd(observation, stages) {
+  const index = stages.findIndex(stage => stage.id === observation.stage);
+  if (index < 0) return null;
+  const percentage = Number(observation.percentage || 50);
+  const current = stages[index].gdd;
+  if (percentage === 50) return current;
+  if (percentage === 25) {
+    if (index === 0) return current;
+    return stages[index - 1].gdd + (current - stages[index - 1].gdd) * 0.5;
+  }
+  if (percentage === 75) {
+    if (index === stages.length - 1) return current;
+    return current + (stages[index + 1].gdd - current) * 0.5;
+  }
+  return current;
+}
+
+function normalizeLocation(location) {
+  const source = location || DEFAULT_LOCATION;
+  return {
+    name: source.name || DEFAULT_LOCATION.name,
+    admin1: source.admin1 || '',
+    country: source.country || 'France',
+    latitude: Number.isFinite(Number(source.latitude)) ? Number(source.latitude) : DEFAULT_LOCATION.latitude,
+    longitude: Number.isFinite(Number(source.longitude)) ? Number(source.longitude) : DEFAULT_LOCATION.longitude,
+    elevation: Number.isFinite(Number(source.elevation)) ? Number(source.elevation) : DEFAULT_LOCATION.elevation,
+    timezone: source.timezone || 'Europe/Paris'
+  };
+}
+
+function locationLabel(location) {
+  const loc = normalizeLocation(location);
+  const details = [loc.admin1, loc.country].filter(Boolean).join(' · ');
+  return details ? `${loc.name} · ${details}` : loc.name;
+}
+
+function renderSelectedLocation() {
+  const loc = normalizeLocation(pendingLocation || DEFAULT_LOCATION);
+  els.selectedLocation.innerHTML = `<strong>${escapeHtml(locationLabel(loc))}</strong><br><span>Latitude ${String(loc.latitude).replace('.', ',')} · longitude ${String(loc.longitude).replace('.', ',')} · altitude ${Math.round(loc.elevation)} m</span>`;
+}
+
+async function searchLocations() {
+  if (!canEdit()) return toast('Connexion nécessaire pour modifier la localisation.');
+  const q = els.locationSearch.value.trim();
+  if (q.length < 2) return toast('Saisissez au moins 2 caractères.');
+  els.searchLocationBtn.disabled = true;
+  els.searchLocationBtn.textContent = 'Recherche…';
+  try {
+    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=12&language=fr&format=json&countryCode=FR`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Recherche indisponible');
+    const data = await response.json();
+    const results = data.results || [];
+    if (!results.length) {
+      els.locationResults.classList.add('hidden');
+      return toast('Aucun lieu trouvé en France.');
+    }
+    els.locationResults._locations = results.map(r => normalizeLocation(r));
+    els.locationResults.innerHTML = '<option value="">Choisir un lieu…</option>' + results.map((r, i) => {
+      const admin = [r.admin2, r.admin1].filter(Boolean).join(', ');
+      const postcode = Array.isArray(r.postcodes) && r.postcodes.length ? ` · ${r.postcodes[0]}` : '';
+      return `<option value="${i}">${escapeHtml(r.name)}${postcode}${admin ? ` · ${escapeHtml(admin)}` : ''}</option>`;
+    }).join('');
+    els.locationResults.classList.remove('hidden');
+  } catch (error) {
+    console.error(error);
+    toast('Impossible de rechercher les localisations.');
+  } finally {
+    els.searchLocationBtn.disabled = !canEdit();
+    els.searchLocationBtn.textContent = 'Rechercher';
+  }
+}
+
+function selectLocationResult() {
+  if (els.locationResults.value === '') return;
+  const index = Number(els.locationResults.value);
+  const results = els.locationResults._locations || [];
+  if (!Number.isInteger(index) || !results[index]) return;
+  pendingLocation = normalizeLocation(results[index]);
+  renderSelectedLocation();
+}
+
+async function refreshWeather(force) {
+  const p = activeParcel();
+  if (!p) return;
+  const loc = normalizeLocation(p.weatherLocation || DEFAULT_LOCATION);
+  if (!navigator.onLine && activeWeather) {
+    els.weatherStatus.textContent = 'Hors connexion : dernières données enregistrées.';
+    renderPhenology();
+    return;
+  }
+  if (!navigator.onLine) {
+    loadCachedWeather();
+    els.weatherStatus.textContent = activeWeather ? 'Hors connexion : dernières données enregistrées.' : 'Hors connexion et aucune donnée météo enregistrée.';
+    renderPhenology();
+    return;
+  }
+
+  const currentYear = new Date().getFullYear();
+  const start = getThermalStartDate(p) || `${currentYear}${FALLBACK_START}`;
+  const historyEnd = isoDate(addDays(new Date(), -1));
+  const today = isoDate(new Date());
+  els.weatherStatus.textContent = `Chargement des données Open-Meteo pour ${loc.name}…`;
+  els.forecastTableWrap.classList.add('hidden');
+
+  const timezone = encodeURIComponent(loc.timezone || 'Europe/Paris');
+  const params = `latitude=${loc.latitude}&longitude=${loc.longitude}&daily=temperature_2m_max,temperature_2m_min&timezone=${timezone}`;
+  const histUrl = `https://archive-api.open-meteo.com/v1/archive?${params}&start_date=${start}&end_date=${historyEnd}`;
+  const forecastUrl = `https://api.open-meteo.com/v1/forecast?${params}&forecast_days=16`;
+
+  try {
+    const [histRes, forecastRes] = await Promise.all([
+      start <= historyEnd ? fetch(histUrl) : Promise.resolve(null),
+      fetch(forecastUrl)
     ]);
+    if (histRes && !histRes.ok) throw new Error('Historique indisponible');
+    if (!forecastRes.ok) throw new Error('Prévisions indisponibles');
+    const history = histRes ? await histRes.json() : { daily: { time: [], temperature_2m_min: [], temperature_2m_max: [] } };
+    const forecast = await forecastRes.json();
+    activeWeather = mergeWeather(history.daily, forecast.daily, today);
+    const stamp = new Date().toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+    saveWeatherCache(activeWeather, p, stamp);
+    els.weatherStatus.textContent = `Données de ${loc.name} actualisées le ${stamp}.`;
+    renderPhenology();
+  } catch (error) {
+    console.error(error);
+    loadCachedWeather();
+    els.weatherStatus.textContent = activeWeather ? 'Open-Meteo indisponible : affichage des dernières données enregistrées.' : 'Impossible de charger les données météo.';
+    renderPhenology();
+  }
+}
+
+function mergeWeather(history, forecast, today) {
+  const map = new Map();
+  const add = (daily, type) => {
+    (daily.time || []).forEach((date, i) => {
+      const item = {
+        date,
+        min: daily.temperature_2m_min?.[i],
+        max: daily.temperature_2m_max?.[i],
+        type: date < today ? 'history' : 'forecast'
+      };
+      map.set(date, item);
+    });
+  };
+  add(history, 'history');
+  add(forecast, 'forecast');
+  return [...map.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function renderPhenology() {
+  const p = activeParcel();
+  updateActiveSummary();
+
+  if (!p) return;
+  if (!activeWeather || !activeWeather.length) {
+    latestAnalysis = null;
+    resetDashboard('Chargement météo nécessaire');
+    renderStageHistory(null);
+    drawChart();
+    return;
+  }
+
+  const analysis = analyzeParcel(p, activeWeather);
+  latestAnalysis = analysis;
+
+  const currentEntry = analysis.currentEntry;
+  const currentStage = currentEntry ? stageForGdd(currentEntry.cumulative, analysis.stages) : analysis.stages[0];
+  els.stageMain.textContent = currentStage ? currentStage.label : '—';
+  els.stageBbch.textContent = currentStage ? currentStage.bbch : '—';
+  els.gddTotal.textContent = currentEntry ? `${round1(currentEntry.cumulative)} DJ` : '—';
+  els.nextStage.textContent = analysis.nextStage ? analysis.nextStage.label : 'Cycle terminé';
+  els.nextDate.textContent = analysis.nextStageDate ? formatDate(analysis.nextStageDate) : (analysis.finalReachedDate ? 'Atteint' : 'Au-delà de la période prévisionnelle');
+  els.calibrationNotice.classList.toggle('hidden', !analysis.notice);
+  els.calibrationNotice.textContent = analysis.notice || '';
+
+  renderAlerts(analysis);
+  renderForecast(analysis);
+  renderStageHistory(analysis);
+  drawChart();
+}
+
+function resetDashboard(bbchText) {
+  els.stageMain.textContent = '—';
+  els.stageBbch.textContent = bbchText || '—';
+  els.gddTotal.textContent = '—';
+  els.nextStage.textContent = '—';
+  els.nextDate.textContent = '—';
+  els.calibrationNotice.classList.add('hidden');
+  els.alertsSection.classList.add('hidden');
+  els.forecastTableWrap.classList.add('hidden');
+  els.forecastBody.innerHTML = '';
+  els.stageHistoryWrap.classList.add('hidden');
+  els.stageHistoryStatus.textContent = 'Aucune donnée chargée.';
+  els.chartCurrentGdd.textContent = '—';
+  els.chartNextThreshold.textContent = '—';
+  els.chartForecastEnd.textContent = '—';
+  els.gddChartStatus.textContent = 'Aucune donnée chargée.';
+}
+
+function analyzeParcel(parcel, weather) {
+  const model = getModelForVariety(parcel.variety);
+  const stages = stagesForModel(model);
+  const lastStage = stages[stages.length - 1];
+  const start = getThermalStartDate(parcel) || `${new Date().getFullYear()}${FALLBACK_START}`;
+  const baseTemp = model.fixedBase ? model.baseTemp : clampNumber(Number(parcel.baseTemp), 0, 15, DEFAULT_BASE_TEMP);
+  const filtered = weather.filter(w => w.date >= start);
+
+  const observations = [...(parcel.observations || [])]
+    .filter(o => stageById(o.stage) && [25, 50, 75].includes(Number(o.percentage || 50)))
+    .sort((a, b) => {
+      const byDate = a.date.localeCompare(b.date);
+      if (byDate) return byDate;
+      return observationTargetGdd(a, stages) - observationTargetGdd(b, stages);
+    });
+
+  // 1) Courbe thermique brute issue uniquement de la météo.
+  let rawCumulative = 0;
+  const rawTimeline = filtered.map(day => {
+    const gdd = computeGdd(day.min, day.max, baseTemp);
+    rawCumulative += gdd;
+    return { ...day, gdd, rawCumulative };
   });
 
-  const quote = v => `"${String(v ?? "").replaceAll('"', '""')}"`;
-  const csv = "\ufeff" + rows.map(row => row.map(quote).join(";")).join("\r\n");
-  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-  const link = document.createElement("a");
+  // 2) Les observations deviennent des points d'ancrage fixes.
+  // Si plusieurs observations existent le même jour, le 50 % est prioritaire
+  // pour l'ancrage de la courbe (une courbe ne peut pas passer par deux Y différents
+  // pour une même date). Toutes les observations restent néanmoins affichées/exportées.
+  const anchorsByDate = new Map();
+  observations.forEach(obs => {
+    const pointIndex = rawTimeline.findIndex(day => day.date === obs.date);
+    if (pointIndex < 0) return;
+    const target = observationTargetGdd(obs, stages);
+    if (target == null) return;
+    const candidate = {
+      date: obs.date,
+      target,
+      raw: rawTimeline[pointIndex].rawCumulative,
+      index: pointIndex,
+      observation: obs
+    };
+    const existing = anchorsByDate.get(obs.date);
+    if (!existing) {
+      anchorsByDate.set(obs.date, candidate);
+      return;
+    }
+    const candidatePct = Number(obs.percentage || 50);
+    const existingPct = Number(existing.observation.percentage || 50);
+    if (candidatePct === 50 || (existingPct !== 50 && Math.abs(candidatePct - 50) < Math.abs(existingPct - 50))) {
+      anchorsByDate.set(obs.date, candidate);
+    }
+  });
+
+  const anchors = [...anchorsByDate.values()].sort((a, b) => a.index - b.index);
+  const adjusted = new Array(rawTimeline.length).fill(null);
+
+  // Avant le premier point observé : on recalcule les estimations pour rejoindre
+  // exactement ce premier point, puisqu'aucun stade antérieur n'est encore verrouillé.
+  if (anchors.length) {
+    const first = anchors[0];
+    if (first.index === 0) {
+      adjusted[0] = Math.max(0, first.target);
+    } else if (first.raw > 0 && first.target > 0) {
+      const factor = first.target / first.raw;
+      for (let i = 0; i <= first.index; i++) {
+        adjusted[i] = Math.max(0, rawTimeline[i].rawCumulative * factor);
+      }
+      adjusted[first.index] = Math.max(0, first.target);
+    } else {
+      // Cas typique du stade C à 50 % (seuil 0 DJ) : on conserve la forme brute
+      // puis on translate progressivement jusqu'au point observé sans passer sous 0.
+      const rawAtAnchor = first.raw;
+      for (let i = 0; i <= first.index; i++) {
+        const progress = first.index ? i / first.index : 1;
+        const correction = (first.target - rawAtAnchor) * progress;
+        adjusted[i] = Math.max(0, rawTimeline[i].rawCumulative + correction);
+      }
+      adjusted[first.index] = Math.max(0, first.target);
+    }
+
+    // Entre deux observations : interpolation recalibrée. Les deux points observés
+    // restent strictement fixes et seules les estimations situées entre eux bougent.
+    for (let a = 0; a < anchors.length - 1; a++) {
+      const left = anchors[a];
+      const right = anchors[a + 1];
+      const rawSpan = right.raw - left.raw;
+      const targetSpan = right.target - left.target;
+      const indexSpan = Math.max(1, right.index - left.index);
+
+      adjusted[left.index] = Math.max(0, left.target);
+      for (let i = left.index + 1; i < right.index; i++) {
+        let fraction;
+        if (rawSpan > 0) {
+          fraction = (rawTimeline[i].rawCumulative - left.raw) / rawSpan;
+        } else {
+          fraction = (i - left.index) / indexSpan;
+        }
+        fraction = Math.max(0, Math.min(1, fraction));
+        adjusted[i] = Math.max(0, left.target + targetSpan * fraction);
+      }
+      adjusted[right.index] = Math.max(0, right.target);
+    }
+
+    // Après le dernier point observé : on prolonge avec le rythme de calibration
+    // du segment observé le plus récent. S'il n'existe pas encore de segment fiable,
+    // on reprend une accumulation 1:1 à partir du dernier point fixe.
+    const last = anchors[anchors.length - 1];
+    let futureFactor = 1;
+    for (let a = anchors.length - 2; a >= 0; a--) {
+      const prev = anchors[a];
+      const rawSpan = last.raw - prev.raw;
+      const targetSpan = last.target - prev.target;
+      if (rawSpan > 0 && targetSpan > 0) {
+        futureFactor = targetSpan / rawSpan;
+        break;
+      }
+    }
+    for (let i = last.index + 1; i < rawTimeline.length; i++) {
+      adjusted[i] = Math.max(0, last.target + (rawTimeline[i].rawCumulative - last.raw) * futureFactor);
+    }
+  } else {
+    // Aucun point terrain : courbe météo brute.
+    rawTimeline.forEach((day, i) => { adjusted[i] = day.rawCumulative; });
+  }
+
+  const timeline = rawTimeline.map((day, i) => ({
+    ...day,
+    cumulative: adjusted[i] == null ? day.rawCumulative : adjusted[i],
+    isObservedAnchor: anchors.some(anchor => anchor.index === i)
+  }));
+
+  const observedFinalDate = observations.find(o => o.stage === lastStage.id && Number(o.percentage || 50) === 50)?.date || null;
+  const estimatedFinalDate = timeline.find(d => d.cumulative >= lastStage.gdd)?.date || null;
+  const finalReachedDate = [observedFinalDate, estimatedFinalDate].filter(Boolean).sort()[0] || null;
+  const truncatedTimeline = finalReachedDate ? timeline.filter(d => d.date <= finalReachedDate) : timeline;
+
+  const stageDates = {};
+  stages.forEach(stage => {
+    const observed50 = observations.find(o => o.stage === stage.id && Number(o.percentage || 50) === 50);
+    if (observed50) {
+      stageDates[stage.id] = { date: observed50.date, origin: 'Observation' };
+      return;
+    }
+    const reached = truncatedTimeline.find(d => d.cumulative >= stage.gdd);
+    stageDates[stage.id] = reached ? { date: reached.date, origin: 'Estimée' } : null;
+  });
+
+  const today = isoDate(new Date());
+  const currentEntry = [...truncatedTimeline].reverse().find(d => d.date <= today) || truncatedTimeline[truncatedTimeline.length - 1] || null;
+  const currentStage = currentEntry ? stageForGdd(currentEntry.cumulative, stages) : stages[0];
+  const nextStage = stages.find(stage => !stageDates[stage.id]) || null;
+  const nextStageDate = nextStage ? truncatedTimeline.find(d => d.cumulative >= nextStage.gdd)?.date || null : null;
+  const forecastEnd = truncatedTimeline[truncatedTimeline.length - 1]?.date || null;
+
+  let notice = '';
+  if (anchors.length === 1) {
+    const obs = anchors[0].observation;
+    notice = `Estimation recalée sur l’observation du ${formatDate(obs.date)} (${obs.percentage || 50} % · ${stageById(obs.stage).label}).`;
+  } else if (anchors.length > 1) {
+    notice = `Courbe recalée sur ${anchors.length} points observés. Les points observés restent fixes et les estimations intermédiaires sont recalculées.`;
+  }
+
+  return {
+    parcel,
+    model,
+    stages,
+    lastStage,
+    baseTemp,
+    start,
+    observations,
+    anchors,
+    timeline: truncatedTimeline,
+    stageDates,
+    currentEntry,
+    currentStage,
+    nextStage,
+    nextStageDate,
+    forecastEnd,
+    finalReachedDate,
+    notice
+  };
+}
+
+function renderAlerts(analysis) {
+  const alerts = [];
+  if (analysis.nextStage && analysis.nextStageDate) {
+    const days = diffDays(isoDate(new Date()), analysis.nextStageDate);
+    if (days >= 0 && days <= 5) alerts.push({ type: 'stage', text: `${analysis.nextStage.label} attendu autour du ${formatDate(analysis.nextStageDate)}.` });
+  }
+  if (!analysis.finalReachedDate) {
+    analysis.timeline.filter(d => d.type === 'forecast').slice(0, 7).forEach(day => {
+      if (day.min <= 0) alerts.push({ type: 'frost', text: `Risque de gel le ${formatDate(day.date)} : Tmin prévue ${round1(day.min)} °C.` });
+    });
+  }
+  els.alertsSection.classList.toggle('hidden', alerts.length === 0);
+  els.alertsList.innerHTML = alerts.map(a => `<div class="alert ${a.type === 'frost' ? 'frost' : ''}">${a.text}</div>`).join('');
+}
+
+function renderForecast(analysis) {
+  const rows = analysis.timeline.filter(d => d.type === 'forecast');
+  if (!rows.length || analysis.finalReachedDate && rows[0].date > analysis.finalReachedDate) {
+    els.forecastTableWrap.classList.add('hidden');
+    els.weatherStatus.textContent = analysis.finalReachedDate ? `Le dernier stade a été atteint le ${formatDate(analysis.finalReachedDate)}. Les prévisions phénologiques sont arrêtées.` : els.weatherStatus.textContent;
+    return;
+  }
+  els.forecastBody.innerHTML = rows.map(day => {
+    const stage = stageForGdd(day.cumulative, analysis.stages);
+    return `<tr><td>${formatDate(day.date)}</td><td>${round1(day.min)} °C</td><td>${round1(day.max)} °C</td><td>${round1(day.gdd)}</td><td>${round1(day.cumulative)}</td><td>${stage.label}</td></tr>`;
+  }).join('');
+  els.forecastTableWrap.classList.remove('hidden');
+}
+
+function renderStageHistory(analysis) {
+  if (!analysis) {
+    els.stageHistoryWrap.classList.add('hidden');
+    els.stageHistoryStatus.textContent = 'Aucune donnée chargée.';
+    return;
+  }
+  els.stageHistoryBody.innerHTML = analysis.stages.map(stage => {
+    const info = analysis.stageDates[stage.id];
+    return `<tr><td>${stage.label}</td><td>${stage.bbch}</td><td>${info ? formatDate(info.date) : 'À venir'}</td><td>${info ? info.origin : '—'}</td></tr>`;
+  }).join('');
+  els.stageHistoryWrap.classList.remove('hidden');
+  els.stageHistoryStatus.textContent = '';
+  els.chartCurrentGdd.textContent = analysis.currentEntry ? `${round1(analysis.currentEntry.cumulative)} DJ` : '—';
+  els.chartNextThreshold.textContent = analysis.nextStage ? `${analysis.nextStage.label} · ${analysis.nextStage.gdd} DJ` : 'Cycle terminé';
+  els.chartForecastEnd.textContent = analysis.forecastEnd ? formatDate(analysis.forecastEnd) : '—';
+  els.gddChartStatus.textContent = analysis.timeline.length ? '' : 'Aucune donnée chargée.';
+}
+
+function drawChart() {
+  const canvas = els.gddChart;
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(300, Math.round(rect.width || 900));
+  const height = Math.max(260, Math.round(rect.height || 360));
+  canvas.width = width * devicePixelRatio;
+  canvas.height = height * devicePixelRatio;
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+
+  if (!latestAnalysis || !latestAnalysis.timeline.length) {
+    chartHoverState = null;
+    hideChartTooltip();
+    ctx.fillStyle = '#666';
+    ctx.font = '14px sans-serif';
+    ctx.fillText('Aucune donnée à afficher.', 20, 30);
+    return;
+  }
+
+  const data = latestAnalysis.timeline;
+  const margin = { top: 18, right: 18, bottom: 42, left: 52 };
+  const chartW = width - margin.left - margin.right;
+  const chartH = height - margin.top - margin.bottom;
+  const maxGdd = Math.max(latestAnalysis.lastStage.gdd, ...data.map(d => d.cumulative)) * 1.08;
+  const startDate = new Date(data[0].date + 'T00:00:00');
+  const endDate = new Date(data[data.length - 1].date + 'T00:00:00');
+  const span = Math.max(1, endDate - startDate);
+  const x = date => margin.left + ((new Date(date + 'T00:00:00') - startDate) / span) * chartW;
+  const y = val => margin.top + chartH - (val / maxGdd) * chartH;
+
+  ctx.strokeStyle = '#ddd';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const gv = (maxGdd / 4) * i;
+    const yy = y(gv);
+    ctx.beginPath(); ctx.moveTo(margin.left, yy); ctx.lineTo(width - margin.right, yy); ctx.stroke();
+    ctx.fillStyle = '#666';
+    ctx.font = '12px sans-serif';
+    ctx.fillText(String(Math.round(gv)), 6, yy + 4);
+  }
+
+  latestAnalysis.stages.forEach(stage => {
+    const yy = y(stage.gdd);
+    ctx.strokeStyle = 'rgba(227, 8, 77, 0.18)';
+    ctx.beginPath(); ctx.moveTo(margin.left, yy); ctx.lineTo(width - margin.right, yy); ctx.stroke();
+    ctx.fillStyle = '#B4063C';
+    ctx.font = '11px sans-serif';
+    ctx.fillText(stage.id, width - margin.right - 18, yy - 4);
+  });
+
+  const hist = data.filter(d => d.type === 'history');
+  const forecast = data.filter(d => d.type === 'forecast');
+  drawLine(ctx, hist, x, y, '#E3084D', false);
+  drawLine(ctx, forecast, x, y, '#978AA1', true, hist[hist.length - 1]);
+
+  const ticks = [data[0], data[Math.floor(data.length / 2)], data[data.length - 1]].filter(Boolean);
+  ctx.fillStyle = '#666';
+  ctx.font = '12px sans-serif';
+  ticks.forEach(t => {
+    const xx = x(t.date);
+    ctx.beginPath(); ctx.moveTo(xx, height - margin.bottom); ctx.lineTo(xx, height - margin.bottom + 6); ctx.strokeStyle = '#bdbdbd'; ctx.stroke();
+    const txt = shortDate(t.date);
+    ctx.fillText(txt, Math.max(margin.left, xx - 18), height - 12);
+  });
+  ctx.strokeStyle = '#999';
+  ctx.beginPath(); ctx.moveTo(margin.left, margin.top); ctx.lineTo(margin.left, height - margin.bottom); ctx.lineTo(width - margin.right, height - margin.bottom); ctx.stroke();
+
+  // Points terrain dessinés en dernier pour rester visibles au-dessus des axes et de la courbe.
+  latestAnalysis.observations.forEach(obs => {
+    const point = data.find(d => d.date === obs.date);
+    const target = observationTargetGdd(obs, latestAnalysis.stages);
+    if (!point || target == null) return;
+    ctx.save();
+    ctx.fillStyle = '#D31145';
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 2.5;
+    ctx.shadowColor = 'rgba(80, 0, 24, .22)';
+    ctx.shadowBlur = 4;
+    ctx.beginPath();
+    ctx.arc(x(obs.date), y(target), 6.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  });
+
+  chartHoverState = { data, x, y, width, height, margin, analysis: latestAnalysis };
+}
+
+function drawLine(ctx, points, xFn, yFn, color, dashed, prepend) {
+  const pts = prepend && points.length ? [prepend, ...points] : points;
+  if (!pts || pts.length < 2) return;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  if (dashed) ctx.setLineDash([7, 6]);
+  ctx.beginPath();
+  pts.forEach((p, i) => {
+    const xx = xFn(p.date);
+    const yy = yFn(p.cumulative);
+    if (i === 0) ctx.moveTo(xx, yy); else ctx.lineTo(xx, yy);
+  });
+  ctx.stroke();
+  ctx.restore();
+}
+
+
+function handleChartPointer(event) {
+  if (!chartHoverState || !chartHoverState.data.length) return;
+  const canvasRect = els.gddChart.getBoundingClientRect();
+  const wrapRect = els.chartWrap.getBoundingClientRect();
+  const pointerX = event.clientX - canvasRect.left;
+  let nearest = chartHoverState.data[0];
+  let best = Infinity;
+  chartHoverState.data.forEach(day => {
+    const dist = Math.abs(chartHoverState.x(day.date) - pointerX);
+    if (dist < best) { best = dist; nearest = day; }
+  });
+  const stage = stageForGdd(nearest.cumulative, chartHoverState.analysis.stages);
+  const observedToday = chartHoverState.analysis.observations.filter(o => o.date === nearest.date);
+  const observedText = observedToday.length
+    ? `<br>${observedToday.map(o => `Observation : ${o.percentage || 50} % · ${stageById(o.stage)?.label || o.stage}`).join('<br>')}`
+    : '';
+  els.chartTooltip.innerHTML = `<strong>${formatDate(nearest.date)}</strong>${round1(nearest.cumulative)} DJ · ${stage.label}${observedText}`;
+  const xInWrap = (canvasRect.left - wrapRect.left) + chartHoverState.x(nearest.date);
+  const yInWrap = (canvasRect.top - wrapRect.top) + chartHoverState.y(nearest.cumulative);
+  els.chartTooltip.style.left = `${Math.max(85, Math.min(wrapRect.width - 85, xInWrap))}px`;
+  els.chartTooltip.style.top = `${Math.max(70, yInWrap)}px`;
+  els.chartTooltip.classList.remove('hidden');
+}
+
+function hideChartTooltip() {
+  if (els.chartTooltip) els.chartTooltip.classList.add('hidden');
+}
+
+function switchTab(tab) {
+  const dash = tab === 'dashboard';
+  els.dashboardView.classList.toggle('hidden', !dash);
+  els.historyView.classList.toggle('hidden', dash);
+  els.dashboardTabBtn.classList.toggle('active', dash);
+  els.historyTabBtn.classList.toggle('active', !dash);
+  els.dashboardTabBtn.setAttribute('aria-selected', String(dash));
+  els.historyTabBtn.setAttribute('aria-selected', String(!dash));
+  if (!dash) setTimeout(drawChart, 50);
+}
+
+function isStandaloneApp() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+function isIosDevice() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent);
+}
+
+function initInstallButton() {
+  if (!els.installCard || !els.installButton || !els.installMessage) return;
+
+  const showMessage = (text) => {
+    if (!text) {
+      els.installMessage.textContent = '';
+      els.installMessage.classList.add('hidden');
+      return;
+    }
+    els.installMessage.textContent = text;
+    els.installMessage.classList.remove('hidden');
+  };
+
+  const updateInstallVisibility = () => {
+    if (isStandaloneApp() || !isPhoneLayout()) {
+      els.installCard.classList.add('hidden');
+    } else {
+      els.installCard.classList.remove('hidden');
+    }
+  };
+
+  updateInstallVisibility();
+  window.addEventListener('resize', updateInstallVisibility);
+
+  window.addEventListener('beforeinstallprompt', event => {
+    event.preventDefault();
+    deferredPrompt = event;
+    updateInstallVisibility();
+  });
+
+  els.installButton.addEventListener('click', async () => {
+    if (isStandaloneApp()) {
+      els.installCard.classList.add('hidden');
+      return;
+    }
+
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      if (outcome === 'accepted') {
+        showMessage('Installation lancée…');
+      }
+      return;
+    }
+
+    if (isIosDevice()) {
+      showMessage('Sur iPhone : Safari → Partager → Sur l’écran d’accueil.');
+      return;
+    }
+
+    showMessage('Dans le menu du navigateur, choisissez « Installer l’application » ou « Ajouter à l’écran d’accueil ».');
+  });
+
+  window.addEventListener('appinstalled', () => {
+    deferredPrompt = null;
+    els.installCard.classList.add('hidden');
+    showMessage('');
+    toast('SAM Phéno est installée.', 3000);
+  });
+}
+
+function registerServiceWorker() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./service-worker.js').catch(error => console.warn('Service worker non enregistré', error));
+  }
+}
+
+function weatherCacheKey(parcel) {
+  const loc = normalizeLocation(parcel?.weatherLocation || DEFAULT_LOCATION);
+  const start = getThermalStartDate(parcel) || `${new Date().getFullYear()}${FALLBACK_START}`;
+  return `${loc.latitude.toFixed(4)}_${loc.longitude.toFixed(4)}_${start}`;
+}
+
+function loadWeatherCacheStore() {
+  try {
+    const raw = localStorage.getItem(WEATHER_CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && !Array.isArray(parsed) ? parsed : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function loadCachedWeather() {
+  const p = activeParcel();
+  if (!p) return;
+  try {
+    const store = loadWeatherCacheStore();
+    const entry = store[weatherCacheKey(p)];
+    if (entry?.data) {
+      activeWeather = entry.data;
+      return;
+    }
+    activeWeather = null;
+  } catch (e) {
+    console.error(e);
+    activeWeather = null;
+  }
+}
+
+function getCachedWeatherStamp(parcel) {
+  const store = loadWeatherCacheStore();
+  return store[weatherCacheKey(parcel)]?.updated || '';
+}
+
+function saveWeatherCache(data, parcel, updated) {
+  const store = loadWeatherCacheStore();
+  store[weatherCacheKey(parcel)] = { data, updated };
+  localStorage.setItem(WEATHER_CACHE_KEY, JSON.stringify(store));
+}
+
+function exportStageTable() {
+  const parcel = activeParcel();
+  if (!parcel) return toast('Aucune parcelle active.');
+  if (!latestAnalysis) return toast('Aucune donnée phénologique à exporter.');
+
+  const observations = parcel.observations || [];
+  const rows = [];
+  latestAnalysis.stages.forEach(stage => {
+    [25, 50, 75].forEach(percentage => {
+      const observed = observations.find(o => o.stage === stage.id && Number(o.percentage || 50) === percentage);
+      const target = observationTargetGdd({ stage: stage.id, percentage }, latestAnalysis.stages);
+      const estimated = target == null ? null : latestAnalysis.timeline.find(day => day.cumulative >= target);
+      const date = observed?.date || estimated?.date || '';
+      const origin = observed ? 'Observée' : (date ? 'Estimée' : '');
+      rows.push({ percentage, stage, date, origin });
+    });
+  });
+
+  const variety = parcel.variety === 'other'
+    ? (parcel.customVarietyName || 'Autre variété')
+    : (VARIETIES.find(v => v.id === parcel.variety)?.label || parcel.variety);
+  const header = ['Exploitation','Parcelle','Variété','Pourcentage de bourgeons atteints','Stade','BBCH','Date','Origine'];
+  const csvRows = [header, ...rows.map(row => [
+    parcel.exploitation || '',
+    parcel.name || '',
+    variety,
+    `${row.percentage} %`,
+    row.stage.label,
+    row.stage.bbch,
+    row.date ? formatDate(row.date) : '',
+    row.origin
+  ])];
+  const csv = csvRows.map(row => row.map(csvEscape).join(';')).join('\r\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  const safeParcel = (parcel.name || 'parcelle').replace(/[^a-z0-9_-]+/gi, '_');
   link.href = url;
-  link.download = `sam_piegeage_${$("yearSelect").value}.csv`;
+  link.download = `SAM_Phenologie_${safeParcel}_stades.csv`;
   document.body.appendChild(link);
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
 }
 
-
-function renderParcelList() {
-  const container = $("parcelList");
-  if (!container) return;
-
-  container.innerHTML = "";
-
-  const list = displayParcels().slice().sort((a, b) =>
-    a.exploitation.localeCompare(b.exploitation, "fr") ||
-    a.name.localeCompare(b.name, "fr")
-  );
-
-  if (!list.length) {
-    const empty = document.createElement("div");
-    empty.className = "parcel-list-empty";
-    empty.textContent = "Aucune parcelle créée.";
-    container.appendChild(empty);
-    return;
-  }
-
-  list.forEach(parcel => {
-    const row = document.createElement("div");
-    row.className = "parcel-list-item";
-    if (parcel._pending) row.classList.add("pending-parcel");
-
-    const info = document.createElement("div");
-    info.className = "parcel-list-info";
-
-    const title = document.createElement("strong");
-    title.textContent = `${parcel.exploitation} — ${parcel.name}`;
-
-    const meta = document.createElement("span");
-    meta.textContent = `${parcel.variety} · ${formatNumber(parcel.area_ha, 2)} ha${parcel._pending ? " · En attente de synchronisation" : ""}`;
-
-    info.append(title, meta);
-
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "delete-parcel-button";
-    button.textContent = "Supprimer";
-    button.addEventListener("click", () => deleteParcel(parcel));
-
-    row.append(info, button);
-    container.appendChild(row);
-  });
+function csvEscape(value) {
+  const text = String(value ?? '');
+  return `"${text.replace(/"/g, '""')}"`;
 }
 
-async function deleteParcel(parcel) {
-  if (!currentUser) return;
+function canEdit() {
+  return supabaseConfigured && isAdmin;
+}
 
-  const linkedObservations = displayObservations().filter(
-    record => record.parcel_id === parcel.id
-  );
+async function initSupabase() {
+  const cfg = window.SAM_SUPABASE || {};
+  const usable = cfg.url && cfg.publishableKey && !cfg.url.includes('VOTRE_') && !cfg.publishableKey.includes('VOTRE_');
+  if (!usable) {
+    supabaseConfigured = false;
+    isAdmin = false;
+    supabaseClient = null;
+    els.authStatus.textContent = 'Supabase n’est pas encore configuré. Renseignez Project URL et Publishable key dans supabase-config.js.';
+    setEditMode();
+    return;
+  }
 
-  const warning = linkedObservations.length
-    ? `Supprimer la parcelle « ${parcel.name} » et ses ${linkedObservations.length} relevé${linkedObservations.length > 1 ? "s" : ""} ?`
-    : `Supprimer la parcelle « ${parcel.name} » ?`;
+  supabaseConfigured = true;
+  if (!window.supabase?.createClient) {
+    isAdmin = false;
+    supabaseClient = null;
+    els.authStatus.textContent = 'Supabase est configuré mais le module de connexion n’a pas pu être chargé. L’application reste en lecture seule.';
+    setEditMode();
+    return;
+  }
 
-  if (!window.confirm(warning)) return;
-
-  if (parcel._pending) {
-    const pendingForParcel = pendingObservations.filter(
-      record => record.parcel_id === parcel.id
-    );
-
-    for (const record of pendingForParcel) {
-      await removePendingObservation(record.id);
+  supabaseClient = window.supabase.createClient(cfg.url, cfg.publishableKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: false
     }
+  });
 
-    await removePendingParcel(parcel.id);
+  const { data, error } = await supabaseClient.auth.getSession();
+  if (error) console.error(error);
+  isAdmin = Boolean(data?.session?.user);
 
-    populateFarms();
-    populateEntryFarms();
-    renderParcelList();
-    refresh();
-    setMessage($("parcelMessage"), "Parcelle supprimée.");
-    return;
+  supabaseClient.auth.onAuthStateChange((_event, session) => {
+    const wasAdmin = isAdmin;
+    isAdmin = Boolean(session?.user);
+    setEditMode();
+    if (!wasAdmin && isAdmin) {
+      setTimeout(async () => {
+        await loadRemoteData();
+        renderExploitationSelect();
+        renderParcelSelect();
+        loadParcelIntoForm();
+        loadCachedWeather();
+        refreshWeather(false);
+        syncPendingObservations();
+      }, 0);
+    }
+  });
+  setEditMode();
+}
+
+function setEditMode() {
+  const editable = canEdit();
+  document.body.classList.toggle('readonly-mode', !editable);
+  document.querySelectorAll('[data-editable]').forEach(el => { el.disabled = !editable; });
+  const model = getModelForVariety(els.variety?.value || activeParcel()?.variety || 'other');
+  if (els.baseTemp) els.baseTemp.disabled = !editable || model.fixedBase;
+  if (els.editStatus) {
+    els.editStatus.classList.toggle('hidden', editable && !supabaseConfigured);
+    els.editStatus.textContent = editable ? 'Édition' : 'Lecture seule';
+  }
+  updateSyncBadge();
+
+  if (els.loginForm) els.loginForm.classList.toggle('hidden', isAdmin);
+  if (els.loggedInBox) els.loggedInBox.classList.toggle('hidden', !isAdmin);
+  if (els.loggedInEmail) els.loggedInEmail.textContent = isAdmin ? 'Connecté' : '—';
+  if (isAdmin && supabaseClient) {
+    supabaseClient.auth.getUser().then(({ data }) => {
+      if (els.loggedInEmail) els.loggedInEmail.textContent = data?.user?.email || 'Connecté';
+    }).catch(() => {});
+  }
+  if (els.newParcelBtn) els.newParcelBtn.classList.toggle('hidden', !editable);
+  if (els.configurationBtn) els.configurationBtn.classList.toggle('hidden', !editable);
+
+  if (supabaseConfigured && !isAdmin) {
+    els.dashboardTabBtn.classList.add('hidden');
+    switchTab('history');
+  } else {
+    els.dashboardTabBtn.classList.remove('hidden');
   }
 
-  if (!navigator.onLine) {
-    setMessage(
-      $("parcelMessage"),
-      "La suppression d’une parcelle déjà synchronisée nécessite une connexion internet.",
-      true
-    );
-    return;
+  if (els.authStatus) {
+    const message = supabaseConfigured ? '' : 'Connexion indisponible';
+    els.authStatus.textContent = message;
+    els.authStatus.classList.toggle('hidden', !message);
   }
+  renderObservations();
+}
 
-  const { error } = await db
-    .from("piegeage_parcels")
-    .delete()
-    .eq("id", parcel.id);
+async function loginSupabase() {
+  if (!supabaseConfigured || !supabaseClient) return toast('Configurez d’abord Supabase dans supabase-config.js.');
+  const email = els.authEmail.value.trim();
+  const password = els.authPassword.value;
+  if (!email) return toast('Renseignez votre adresse mail.');
+  if (!password) return toast('Renseignez votre mot de passe.');
+
+  els.loginBtn.disabled = true;
+  els.loginBtn.textContent = 'Connexion…';
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  els.loginBtn.disabled = false;
+  els.loginBtn.textContent = 'Connexion';
 
   if (error) {
-    setMessage(
-      $("parcelMessage"),
-      `Suppression impossible : ${error.message}`,
-      true
-    );
+    console.error(error);
+    els.authPassword.value = '';
+    els.authStatus.textContent = 'Lecture seule';
+    return toast('Adresse mail ou mot de passe incorrect.');
+  }
+
+  isAdmin = Boolean(data?.session?.user);
+  els.authPassword.value = '';
+  setEditMode();
+  switchTab('dashboard');
+  await loadRemoteData();
+  renderExploitationSelect();
+  renderParcelSelect();
+  loadParcelIntoForm();
+  loadCachedWeather();
+  await refreshWeather(false);
+  if (els.authCard && isPhoneLayout()) { els.authCard.classList.remove('open'); els.authToggleButton?.setAttribute('aria-expanded', 'false'); }
+  await syncPendingObservations();
+  toast('Mode édition activé.');
+}
+
+async function logoutSupabase() {
+  if (!supabaseClient) return;
+  await supabaseClient.auth.signOut();
+  isAdmin = false;
+  setEditMode();
+  els.authEmail.value = '';
+  els.authPassword.value = '';
+  if (els.authCard && isPhoneLayout()) { els.authCard.classList.remove('open'); els.authToggleButton?.setAttribute('aria-expanded', 'false'); }
+  toast('Déconnecté.');
+}
+
+async function loadRemoteData() {
+  if (!supabaseClient) {
+    loadRemoteCache();
+    mergePendingIntoState();
+    updateSyncBadge();
     return;
   }
-
-  parcels = parcels.filter(item => item.id !== parcel.id);
-  observations = observations.filter(record => record.parcel_id !== parcel.id);
-
-  const pendingForParcel = pendingObservations.filter(
-    record => record.parcel_id === parcel.id
-  );
-  for (const record of pendingForParcel) {
-    await removePendingObservation(record.id);
-  }
-
-  await saveCachedData();
-
-  populateFarms();
-  populateEntryFarms();
-  renderParcelList();
-  refresh();
-
-  setMessage($("parcelMessage"), "Parcelle supprimée.");
-}
-
-function openParcelDialog() {
-  if (!currentUser) return;
-  setMessage($("parcelMessage"));
-  renderParcelList();
-  $("parcelDialog").showModal();
-}
-
-function openObservationDialog() {
-  if (!currentUser) return;
-  setMessage($("observationMessage"));
-
-  if (!displayParcels().length) {
-    setMessage($("globalMessage"), "Créez d’abord une parcelle.", true);
-    return;
-  }
-
-  const currentFarm = $("farmSelect").value;
-  const currentParcel = $("parcelSelect").value;
-  populateEntryFarms(currentFarm, currentParcel !== "all" ? currentParcel : null);
-  $("entryPest").value = $("pestSelect").value === "all"
-    ? "carpocapse"
-    : $("pestSelect").value;
-  $("observationDate").value = new Date().toISOString().slice(0, 10);
-  $("observationDialog").showModal();
-}
-
-
-function toggleMobileAuthCard() {
-  const card = $("authCard");
-  const button = $("authToggleButton");
-  if (!card || !button || window.innerWidth > 720) return;
-
-  const open = card.classList.toggle("open");
-  button.setAttribute("aria-expanded", String(open));
-}
-
-function closeMobileAuthCard() {
-  const card = $("authCard");
-  const button = $("authToggleButton");
-  if (!card || !button || window.innerWidth > 720) return;
-
-  card.classList.remove("open");
-  button.setAttribute("aria-expanded", "false");
-}
-
-function isAppMarkedInstalled() {
-  return window.localStorage.getItem(INSTALL_STORAGE_KEY) === "1";
-}
-
-function markAppInstalled() {
-  window.localStorage.setItem(INSTALL_STORAGE_KEY, "1");
-}
-
-function isStandalone() {
-  return window.matchMedia("(display-mode: standalone)").matches ||
-    window.navigator.standalone === true;
-}
-
-function isIOS() {
-  return /iphone|ipad|ipod/i.test(window.navigator.userAgent) ||
-    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-}
-
-function isMobileDevice() {
-  if (navigator.userAgentData &&
-      typeof navigator.userAgentData.mobile === "boolean") {
-    return navigator.userAgentData.mobile;
-  }
-
-  const ua = navigator.userAgent || "";
-  const mobileUa = /Android|iPhone|iPad|iPod|IEMobile|Opera Mini|Mobile/i.test(ua);
-  const iPadDesktopMode =
-    navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
-
-  return mobileUa || iPadDesktopMode;
-}
-
-function showInstallMessage(message) {
-  const box = $("installMessage");
-  if (!box) return;
-
-  box.textContent = message;
-  box.classList.remove("hidden");
-
-  window.clearTimeout(showInstallMessage.timer);
-  showInstallMessage.timer =
-    window.setTimeout(() => box.classList.add("hidden"), 7000);
-}
-
-async function installApp() {
-  if (isStandalone()) return;
-
-  if (deferredInstallPrompt) {
-    deferredInstallPrompt.prompt();
-    const result = await deferredInstallPrompt.userChoice;
-    deferredInstallPrompt = null;
-
-    if (result.outcome === "accepted") {
-      markAppInstalled();
-      $("installCard").classList.add("hidden");
+  const [{ data: parcels, error: parcelError }, { data: observations, error: obsError }] = await Promise.all([
+    supabaseClient.from('parcels').select('*').order('exploitation').order('name'),
+    supabaseClient.from('observations').select('*').order('obs_date')
+  ]);
+  if (parcelError || obsError) {
+    console.error(parcelError || obsError);
+    const restored = loadRemoteCache();
+    mergePendingIntoState();
+    updateSyncBadge();
+    if (!restored && navigator.onLine) {
+      state = { parcels: [], activeParcelId: null };
+      activeWeather = null;
+      latestAnalysis = null;
+      els.authStatus.textContent = `Connexion Supabase établie, mais les tables ne sont pas encore accessibles. Exécutez le fichier supabase-schema.sql.`;
     }
     return;
   }
-
-  if (isIOS()) {
-    showInstallMessage(
-      "Sur iPhone/iPad : ouvre cette page dans Safari, touche Partager, puis « Sur l’écran d’accueil »."
-    );
-  } else {
-    showInstallMessage(
-      "Si l’installation ne s’ouvre pas, utilise le menu du navigateur puis « Installer l’application » ou « Ajouter à l’écran d’accueil »."
-    );
-  }
-}
-
-function initPWA() {
-  const installCard = $("installCard");
-  const installButton = $("installButton");
-  const mobile = isMobileDevice();
-
-  if (!installCard || !installButton) return;
-
-  if (isStandalone()) {
-    markAppInstalled();
-  }
-
-  const alreadyInstalled = isStandalone() || isAppMarkedInstalled();
-
-  if (!mobile || alreadyInstalled) {
-    installCard.classList.add("hidden");
-  } else {
-    installCard.classList.remove("hidden");
-  }
-
-  window.addEventListener("beforeinstallprompt", event => {
-    event.preventDefault();
-    deferredInstallPrompt = event;
-
-    if (mobile && !isStandalone() && !isAppMarkedInstalled()) {
-      installCard.classList.remove("hidden");
-      installButton.classList.remove("hidden");
-    }
+  const obsByParcel = new Map();
+  (observations || []).forEach(o => {
+    if (!obsByParcel.has(o.parcel_id)) obsByParcel.set(o.parcel_id, []);
+    obsByParcel.get(o.parcel_id).push({ id: o.id, date: o.obs_date, stage: o.stage, percentage: Number(o.bud_percentage || 50) });
   });
+  const previousId = state.activeParcelId;
+  state.parcels = (parcels || []).map(row => ({
+    id: row.id,
+    exploitation: row.exploitation,
+    name: row.name,
+    variety: row.variety === 'opale' ? 'opal' : row.variety,
+    customVarietyName: row.custom_variety_name || '',
+    baseTemp: Number(row.base_temp ?? DEFAULT_BASE_TEMP),
+    weatherLocation: normalizeLocation({
+      name: row.weather_location_name,
+      admin1: row.weather_admin1,
+      country: row.weather_country,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      elevation: row.elevation,
+      timezone: row.timezone
+    }),
+    observations: obsByParcel.get(row.id) || []
+  }));
+  state.activeParcelId = state.parcels.some(p => p.id === previousId) ? previousId : (state.parcels[0]?.id || null);
+  if (!state.parcels.length) {
+    activeWeather = null;
+    latestAnalysis = null;
+  }
+  normalizeState();
+  saveRemoteCache();
+  mergePendingIntoState();
+  updateSyncBadge();
+}
 
-  const standaloneMedia = window.matchMedia("(display-mode: standalone)");
-  const handleDisplayModeChange = () => {
-    if (isStandalone()) {
-      markAppInstalled();
-      installCard.classList.add("hidden");
-    }
+function parcelRow(parcel) {
+  const loc = normalizeLocation(parcel.weatherLocation || DEFAULT_LOCATION);
+  return {
+    id: parcel.id,
+    exploitation: parcel.exploitation,
+    name: parcel.name,
+    variety: parcel.variety,
+    custom_variety_name: parcel.variety === 'other' ? (parcel.customVarietyName || null) : null,
+    stage_c_date: getReachedStageCDate(parcel) || null,
+    base_temp: parcel.baseTemp,
+    weather_location_name: loc.name,
+    weather_admin1: loc.admin1 || null,
+    weather_country: loc.country || 'France',
+    latitude: loc.latitude,
+    longitude: loc.longitude,
+    elevation: loc.elevation,
+    timezone: loc.timezone || 'Europe/Paris',
+    updated_at: new Date().toISOString()
   };
+}
 
-  if (standaloneMedia.addEventListener) {
-    standaloneMedia.addEventListener("change", handleDisplayModeChange);
+async function syncParcelToSupabase(parcel) {
+  if (!supabaseClient || !isAdmin) return false;
+  const { error } = await supabaseClient.from('parcels').upsert(parcelRow(parcel), { onConflict: 'id' });
+  if (error) {
+    console.error(error);
+    toast(`Sauvegarde impossible : ${error.message}`);
+    return false;
   }
+  return true;
+}
 
-  window.addEventListener("appinstalled", () => {
-    deferredInstallPrompt = null;
-    markAppInstalled();
-    installCard.classList.add("hidden");
+async function syncObservationToSupabase(parcelId, observation, options = {}) {
+  if (!supabaseClient || !isAdmin) return false;
+  const { error } = await supabaseClient.from('observations').upsert({
+    parcel_id: parcelId,
+    obs_date: observation.date,
+    stage: observation.stage,
+    bud_percentage: Number(observation.percentage || 50),
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'parcel_id,obs_date,stage,bud_percentage' });
+  if (error) {
+    console.error(error);
+    if (options.queueOnNetworkError && isLikelyNetworkError(error)) {
+      queueOfflineObservation(parcelId, observation);
+      mergePendingIntoState();
+      loadParcelIntoForm();
+      updateSyncBadge();
+      toast('Réseau indisponible : observation conservée sur le téléphone.');
+      return false;
+    }
+    toast(`Observation non enregistrée : ${error.message}`);
+    return false;
+  }
+  return true;
+}
+
+
+function initOfflineSync() {
+  window.addEventListener('online', async () => {
+    updateSyncBadge();
+    await syncPendingObservations();
+    if (state.parcels.length) {
+      loadCachedWeather();
+      refreshWeather(false);
+    }
   });
+  window.addEventListener('offline', () => {
+    updateSyncBadge();
+    toast('Hors connexion : les nouveaux relevés seront conservés sur ce téléphone.');
+  });
+  updateSyncBadge();
+}
 
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", async () => {
-      try {
-        const registration =
-          await navigator.serviceWorker.register("./service-worker.js");
-        await registration.update();
-      } catch (error) {
-        console.warn("Service worker non enregistré :", error);
+function getOfflineQueue() {
+  try {
+    const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn('File hors connexion illisible', error);
+    return [];
+  }
+}
+
+function saveOfflineQueue(queue) {
+  try {
+    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+  } catch (error) {
+    console.error('Impossible de sauvegarder le relevé hors connexion', error);
+  }
+}
+
+function queueOfflineObservation(parcelId, observation) {
+  const queue = getOfflineQueue();
+  const existing = queue.find(item =>
+    item.parcelId === parcelId &&
+    item.date === observation.date &&
+    item.stage === observation.stage &&
+    Number(item.percentage || 50) === Number(observation.percentage || 50)
+  );
+  if (existing) return existing;
+  const item = {
+    localId: `offline_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    parcelId,
+    date: observation.date,
+    stage: observation.stage,
+    percentage: Number(observation.percentage || 50),
+    createdAt: new Date().toISOString()
+  };
+  queue.push(item);
+  saveOfflineQueue(queue);
+  return item;
+}
+
+function removePendingObservation(localId) {
+  saveOfflineQueue(getOfflineQueue().filter(item => item.localId !== localId));
+}
+
+function mergePendingIntoState() {
+  const queue = getOfflineQueue();
+  state.parcels.forEach(parcel => {
+    parcel.observations = (parcel.observations || []).filter(obs => !obs.pending);
+    queue.filter(item => item.parcelId === parcel.id).forEach(item => {
+      const duplicate = parcel.observations.some(obs =>
+        obs.date === item.date &&
+        obs.stage === item.stage &&
+        Number(obs.percentage || 50) === Number(item.percentage || 50)
+      );
+      if (!duplicate) {
+        parcel.observations.push({
+          id: item.localId,
+          date: item.date,
+          stage: item.stage,
+          percentage: Number(item.percentage || 50),
+          pending: true
+        });
       }
     });
+  });
+}
+
+function saveRemoteCache() {
+  try {
+    const clean = {
+      savedAt: new Date().toISOString(),
+      activeParcelId: state.activeParcelId,
+      parcels: state.parcels.map(parcel => ({
+        ...parcel,
+        observations: (parcel.observations || []).filter(obs => !obs.pending)
+      }))
+    };
+    localStorage.setItem(REMOTE_CACHE_KEY, JSON.stringify(clean));
+  } catch (error) {
+    console.warn('Cache des parcelles impossible', error);
   }
 }
 
+function loadRemoteCache() {
+  try {
+    const raw = localStorage.getItem(REMOTE_CACHE_KEY);
+    if (!raw) return false;
+    const cached = JSON.parse(raw);
+    if (!cached || !Array.isArray(cached.parcels)) return false;
+    state = {
+      parcels: cached.parcels,
+      activeParcelId: cached.activeParcelId || cached.parcels[0]?.id || null
+    };
+    normalizeState();
+    return true;
+  } catch (error) {
+    console.warn('Cache des parcelles illisible', error);
+    return false;
+  }
+}
 
-function bind() {
-  $("installButton").addEventListener("click", installApp);
-  $("authToggleButton").addEventListener("click", toggleMobileAuthCard);
-  $("loginForm").addEventListener("submit", login);
-  $("logoutButton").addEventListener("click", logout);
+async function syncPendingObservations() {
+  if (isSyncingPending || !navigator.onLine || !supabaseClient || !isAdmin) {
+    updateSyncBadge();
+    return;
+  }
+  let queue = getOfflineQueue();
+  if (!queue.length) {
+    updateSyncBadge();
+    return;
+  }
 
-  $("addParcelButton").addEventListener("click", openParcelDialog);
-  $("addObservationButton").addEventListener("click", openObservationDialog);
-  $("closeParcelDialog").addEventListener("click", () => $("parcelDialog").close());
-  $("closeObservationDialog").addEventListener("click", () => $("observationDialog").close());
+  isSyncingPending = true;
+  updateSyncBadge();
+  let synced = 0;
+  const remaining = [];
 
-  $("parcelForm").addEventListener("submit", createParcel);
-  $("observationForm").addEventListener("submit", createObservation);
+  for (const item of queue) {
+    const { error } = await supabaseClient.from('observations').upsert({
+      parcel_id: item.parcelId,
+      obs_date: item.date,
+      stage: item.stage,
+      bud_percentage: Number(item.percentage || 50),
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'parcel_id,obs_date,stage,bud_percentage' });
 
-  $("entryFarm").addEventListener("change", () => populateEntryParcels());
+    if (error) {
+      console.error('Synchronisation différée impossible', error);
+      remaining.push(item);
+      if (isLikelyNetworkError(error)) {
+        const currentIndex = queue.indexOf(item);
+        remaining.push(...queue.slice(currentIndex + 1));
+        break;
+      }
+    } else {
+      synced += 1;
+    }
+  }
 
-  $("pestSelect").addEventListener("change", refresh);
-  $("yearSelect").addEventListener("change", refresh);
-  $("calculationSelect").addEventListener("change", refresh);
-  $("displaySelect").addEventListener("change", refresh);
+  saveOfflineQueue(dedupeQueue(remaining));
+  isSyncingPending = false;
 
-  $("farmSelect").addEventListener("change", () => {
-    populateParcelFilter("all");
-    refresh();
-  });
-  $("parcelSelect").addEventListener("change", refresh);
+  if (synced > 0) {
+    await loadRemoteData();
+    renderExploitationSelect();
+    renderParcelSelect();
+    loadParcelIntoForm();
+    if (state.parcels.length) {
+      loadCachedWeather();
+      await refreshWeather(false);
+    }
+    toast(`${synced} relevé${synced > 1 ? 's' : ''} synchronisé${synced > 1 ? 's' : ''}.`);
+  } else {
+    mergePendingIntoState();
+    renderObservations();
+  }
+  updateSyncBadge();
+}
 
-  $("exportCsvButton").addEventListener("click", exportCsv);
-
-  window.addEventListener("offline", () => {
-    updateSyncStatus();
-  });
-
-  window.addEventListener("online", async () => {
-    updateSyncStatus("Connexion retrouvée — synchronisation…", "syncing");
-    await syncPendingData();
-    await loadData();
-  });
-
-  [$("parcelDialog"), $("observationDialog")].forEach(dialog => {
-    dialog.addEventListener("click", e => {
-      if (e.target === dialog) dialog.close();
-    });
+function dedupeQueue(queue) {
+  const seen = new Set();
+  return queue.filter(item => {
+    const key = `${item.parcelId}|${item.date}|${item.stage}|${Number(item.percentage || 50)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
 }
 
-document.addEventListener("DOMContentLoaded", async () => {
-  bind();
-  initPWA();
-  updateSyncStatus();
-  await init();
-});
+function updateSyncBadge() {
+  if (!els.dataModeBadge) return;
+  const pendingCount = getOfflineQueue().length;
+  if (!navigator.onLine) {
+    els.dataModeBadge.textContent = pendingCount
+      ? `Hors connexion · ${pendingCount} à synchroniser`
+      : 'Hors connexion';
+    els.dataModeBadge.classList.remove('hidden');
+    els.dataModeBadge.classList.add('offline-badge');
+    return;
+  }
+  if (isSyncingPending) {
+    els.dataModeBadge.textContent = 'Synchronisation…';
+    els.dataModeBadge.classList.remove('hidden');
+    els.dataModeBadge.classList.add('offline-badge');
+    return;
+  }
+  if (pendingCount) {
+    els.dataModeBadge.textContent = `${pendingCount} à synchroniser`;
+    els.dataModeBadge.classList.remove('hidden');
+    els.dataModeBadge.classList.add('offline-badge');
+    return;
+  }
+  els.dataModeBadge.classList.add('hidden');
+  els.dataModeBadge.classList.remove('offline-badge');
+}
+
+function isLikelyNetworkError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return !navigator.onLine ||
+    message.includes('failed to fetch') ||
+    message.includes('network') ||
+    message.includes('fetch') ||
+    message.includes('timeout');
+}
+
+function getModelForVariety(varietyId) {
+  const variety = VARIETIES.find(v => v.id === varietyId);
+  return MODEL_CONFIG[variety?.model] || MODEL_CONFIG.generic;
+}
+
+function stagesForModel(model) {
+  return STAGE_META.map(stage => ({ ...stage, gdd: Number(model.thresholds[stage.id]) }));
+}
+
+function stageById(id) { return STAGE_META.find(stage => stage.id === id); }
+function stageForGdd(gdd, stages) {
+  const stageList = stages || stagesForModel(MODEL_CONFIG.generic);
+  let current = stageList[0];
+  for (const stage of stageList) if (gdd >= stage.gdd) current = stage;
+  return current;
+}
+function computeGdd(min, max, base) { return Math.max(0, (((Number(min) || 0) + (Number(max) || 0)) / 2) - base); }
+function formatDate(dateStr) { return new Date(dateStr + 'T00:00:00').toLocaleDateString('fr-FR'); }
+function shortDate(dateStr) { return new Date(dateStr + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }); }
+function isoDate(date) { return date.toISOString().slice(0, 10); }
+function addDays(date, n) { const d = new Date(date); d.setDate(d.getDate() + n); return d; }
+function diffDays(date1, date2) { return Math.round((new Date(date2 + 'T00:00:00') - new Date(date1 + 'T00:00:00')) / 86400000); }
+function round1(n) { return (Math.round((Number(n) + Number.EPSILON) * 10) / 10).toFixed(1); }
+function clampNumber(value, min, max, fallback) { return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback; }
+function uid() { return 'p_' + Math.random().toString(36).slice(2, 10); }
+function escapeHtml(str) { return String(str).replace(/[&<>'"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;' }[c])); }
+function toast(message, duration = 1800) {
+  if (!els.toast) return;
+  els.toast.textContent = message;
+  els.toast.classList.add('show');
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => els.toast.classList.remove('show'), duration);
+}
