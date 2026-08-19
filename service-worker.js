@@ -1,65 +1,66 @@
-const CACHE = 'sam-pheno-offline-observations-1';
-const ASSETS = [
-  './',
-  './index.html',
-  './style.css',
-  './app.js',
-  './supabase-config.js',
-  './manifest.webmanifest',
-  './logo-sudexpe.png',
-  './logo-sam-pheno.png',
-  './bouton-connexion.png',
-  './favicon.ico?v=phenologie-4',
-  './favicon.png?v=phenologie-4',
-  './apple-touch-icon.png?v=phenologie-4',
-  './icon-192.png?v=phenologie-4',
-  './icon-512.png?v=phenologie-4'
+const CACHE_NAME = "sam-piegeage-v20260819-2";
+
+const CORE_ASSETS = [
+  "./",
+  "./index.html",
+  "./style.css?v=20260819-2",
+  "./app.js?v=20260819-2",
+  "./config.js?v=20260819-2",
+  "./site.webmanifest",
+  "./favicon.ico",
+  "./favicon.png",
+  "./apple-touch-icon.png",
+  "./android-chrome-192x192.png",
+  "./android-chrome-512x512.png",
+  "./icon-192-maskable.png",
+  "./icon-512-maskable.png",
+  "./logo-sudexpe.png",
+  "./favicon-32x32.png",
+  "./favicon-16x16.png",
+  "./bouton-connexion.png",
+  "./logo-sam-piegeage.png"
 ];
 
-self.addEventListener('install', event => {
+self.addEventListener("install", event => {
+  self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE)
-      .then(cache => cache.addAll(ASSETS))
-      .then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then(cache =>
+      Promise.allSettled(CORE_ASSETS.map(asset => cache.add(asset)))
+    )
   );
 });
 
-self.addEventListener('activate', event => {
+self.addEventListener("activate", event => {
   event.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))
+      .then(keys => Promise.all(
+        keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))
+      ))
       .then(() => self.clients.claim())
   );
 });
 
-self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET') return;
+self.addEventListener("fetch", event => {
+  const request = event.request;
+  if (request.method !== "GET") return;
 
-  if (event.request.url.includes('open-meteo.com') || event.request.url.includes('supabase.co')) {
-    event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
-    return;
-  }
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) return;
 
-  if (event.request.mode === 'navigate') {
-    event.respondWith(
-      fetch(event.request)
-        .then(response => {
-          const copy = response.clone();
-          caches.open(CACHE).then(cache => cache.put('./index.html', copy));
-          return response;
-        })
-        .catch(() => caches.match('./index.html'))
-    );
-    return;
-  }
-
+  // Network-first avoids keeping an obsolete GitHub Pages version.
   event.respondWith(
-    fetch(event.request)
+    fetch(request)
       .then(response => {
-        const copy = response.clone();
-        caches.open(CACHE).then(cache => cache.put(event.request, copy));
+        if (response && response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
+        }
         return response;
       })
-      .catch(() => caches.match(event.request))
+      .catch(() =>
+        caches.match(request).then(cached =>
+          cached || (request.mode === "navigate" ? caches.match("./index.html") : Response.error())
+        )
+      )
   );
 });
