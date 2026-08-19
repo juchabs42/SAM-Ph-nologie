@@ -1316,3 +1316,33 @@ button, select, input { touch-action: manipulation; }
     grid-template-columns: 1fr;
   }
 }
+
+/* ===== Relevés hors connexion ===== */
+.mode-badge.offline-badge {
+  background: #fff3cd;
+  border-color: #e7c967;
+  color: #715400;
+}
+.observation-row.pending-sync {
+  border-color: #e7c967;
+  background: #fffaf0;
+}
+.sync-pending-label {
+  display: inline-flex;
+  margin-left: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #fff3cd;
+  color: #715400;
+  font-size: .68rem;
+  font-style: normal;
+  font-weight: 800;
+  vertical-align: middle;
+}
+@media (max-width: 620px) {
+  .sync-pending-label {
+    display: flex;
+    width: max-content;
+    margin: 5px 0 0;
+  }
+}

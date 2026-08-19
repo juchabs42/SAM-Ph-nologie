@@ -5,6 +5,8 @@ const STORAGE_KEY = 'sam-phenologie-v2.7';
 const LEGACY_STORAGE_KEYS = ['sam-phenologie-v2.6', 'sam-phenologie-v2.5', 'sam-phenologie-v2.4', 'sam-phenologie-v2.3', 'sam-phenologie-v1'];
 const WEATHER_CACHE_KEY = 'sam-phenologie-weather-v2.7';
 const LEGACY_WEATHER_CACHE_KEYS = ['sam-phenologie-weather-v2.6', 'sam-phenologie-weather-v2.5', 'sam-phenologie-weather-v2.4', 'sam-phenologie-weather-cache-v1'];
+const REMOTE_CACHE_KEY = 'sam-phenologie-remote-cache-v1';
+const OFFLINE_QUEUE_KEY = 'sam-phenologie-offline-observations-v1';
 const DEFAULT_LOCATION = { name: 'Marsillargues', admin1: 'Occitanie', country: 'France', latitude: 43.6343, longitude: 4.1706, elevation: 2, timezone: 'Europe/Paris' };
 const DEFAULT_BASE_TEMP = 5;
 const FALLBACK_START = '-03-01';
@@ -94,6 +96,7 @@ let supabaseClient = null;
 let supabaseConfigured = false;
 let isAdmin = false;
 let configFormMode = 'edit';
+let isSyncingPending = false;
 
 clearLegacyParcelStorage();
 window.addEventListener('DOMContentLoaded', init);
@@ -104,12 +107,14 @@ async function init() {
   populateVarieties();
   populateStages();
   bindEvents();
+  initOfflineSync();
   initAuthToggle();
   initInstallButton();
   normalizeState();
   registerServiceWorker();
   await initSupabase();
   if (supabaseConfigured) await loadRemoteData();
+  if (navigator.onLine) await syncPendingObservations();
   renderExploitationSelect();
   renderParcelSelect();
   loadParcelIntoForm();
@@ -479,7 +484,17 @@ async function addObservation() {
   if (!date) return toast('Choisissez une date.');
   if (![25, 50, 75].includes(percentage)) return toast('Pourcentage invalide.');
 
-  const obsSaved = await syncObservationToSupabase(p.id, { date, stage, percentage });
+  const observation = { date, stage, percentage };
+  if (!navigator.onLine) {
+    queueOfflineObservation(p.id, observation);
+    mergePendingIntoState();
+    loadParcelIntoForm();
+    updateSyncBadge();
+    toast('Observation enregistrée hors connexion.');
+    return;
+  }
+
+  const obsSaved = await syncObservationToSupabase(p.id, observation, { queueOnNetworkError: true });
   if (!obsSaved) return;
   await loadRemoteData();
   renderExploitationSelect();
@@ -487,6 +502,7 @@ async function addObservation() {
   loadParcelIntoForm();
   loadCachedWeather();
   await refreshWeather(true);
+  updateSyncBadge();
   toast('Observation ajoutée.');
 }
 
@@ -494,6 +510,17 @@ async function removeObservation(id) {
   if (!canEdit()) return toast('Connexion nécessaire pour supprimer une observation.');
   const p = activeParcel();
   if (!p || !id) return;
+
+  if (String(id).startsWith('offline_')) {
+    removePendingObservation(id);
+    mergePendingIntoState();
+    loadParcelIntoForm();
+    updateSyncBadge();
+    toast('Observation hors connexion supprimée.');
+    return;
+  }
+
+  if (!navigator.onLine) return toast('La suppression d’une observation déjà synchronisée nécessite une connexion.');
   const { error } = await supabaseClient.from('observations').delete().eq('id', id).eq('parcel_id', p.id);
   if (error) return toast(`Suppression impossible : ${error.message}`);
   await loadRemoteData();
@@ -516,7 +543,8 @@ function renderObservations() {
     const stage = stageById(o.stage);
     const percentage = Number(o.percentage || 50);
     const del = editable ? `<button type="button" data-id="${o.id}" aria-label="Supprimer">✕</button>` : '<span></span>';
-    return `<div class="observation-row"><span>${formatDate(o.date)}</span><strong>${percentage} % · ${stage ? stage.label : escapeHtml(o.stage)}</strong>${del}</div>`;
+    const pending = o.pending ? '<em class="sync-pending-label">À synchroniser</em>' : '';
+    return `<div class="observation-row ${o.pending ? 'pending-sync' : ''}"><span>${formatDate(o.date)}</span><strong>${percentage} % · ${stage ? stage.label : escapeHtml(o.stage)}${pending}</strong>${del}</div>`;
   }).join('') : '<p class="hint">Aucune observation enregistrée.</p>';
   if (editable) {
     els.observationsList.querySelectorAll('button[data-id]').forEach(btn => btn.addEventListener('click', () => removeObservation(btn.dataset.id)));
@@ -1333,6 +1361,7 @@ async function initSupabase() {
         loadParcelIntoForm();
         loadCachedWeather();
         refreshWeather(false);
+        syncPendingObservations();
       }, 0);
     }
   });
@@ -1349,9 +1378,7 @@ function setEditMode() {
     els.editStatus.classList.toggle('hidden', editable && !supabaseConfigured);
     els.editStatus.textContent = editable ? 'Édition' : 'Lecture seule';
   }
-  if (els.dataModeBadge) {
-    els.dataModeBadge.textContent = supabaseConfigured ? (isAdmin ? 'Édition' : 'Lecture seule') : 'Mode local';
-  }
+  updateSyncBadge();
 
   if (els.loginForm) els.loginForm.classList.toggle('hidden', isAdmin);
   if (els.loggedInBox) els.loggedInBox.classList.toggle('hidden', !isAdmin);
@@ -1410,6 +1437,7 @@ async function loginSupabase() {
   loadCachedWeather();
   await refreshWeather(false);
   if (els.authCard && isPhoneLayout()) { els.authCard.classList.remove('open'); els.authToggleButton?.setAttribute('aria-expanded', 'false'); }
+  await syncPendingObservations();
   toast('Mode édition activé.');
 }
 
@@ -1425,17 +1453,27 @@ async function logoutSupabase() {
 }
 
 async function loadRemoteData() {
-  if (!supabaseClient) return;
+  if (!supabaseClient) {
+    loadRemoteCache();
+    mergePendingIntoState();
+    updateSyncBadge();
+    return;
+  }
   const [{ data: parcels, error: parcelError }, { data: observations, error: obsError }] = await Promise.all([
     supabaseClient.from('parcels').select('*').order('exploitation').order('name'),
     supabaseClient.from('observations').select('*').order('obs_date')
   ]);
   if (parcelError || obsError) {
     console.error(parcelError || obsError);
-    state = { parcels: [], activeParcelId: null };
-    activeWeather = null;
-    latestAnalysis = null;
-    els.authStatus.textContent = `Connexion Supabase établie, mais les tables ne sont pas encore accessibles. Exécutez le fichier supabase-schema.sql.`;
+    const restored = loadRemoteCache();
+    mergePendingIntoState();
+    updateSyncBadge();
+    if (!restored && navigator.onLine) {
+      state = { parcels: [], activeParcelId: null };
+      activeWeather = null;
+      latestAnalysis = null;
+      els.authStatus.textContent = `Connexion Supabase établie, mais les tables ne sont pas encore accessibles. Exécutez le fichier supabase-schema.sql.`;
+    }
     return;
   }
   const obsByParcel = new Map();
@@ -1468,6 +1506,9 @@ async function loadRemoteData() {
     latestAnalysis = null;
   }
   normalizeState();
+  saveRemoteCache();
+  mergePendingIntoState();
+  updateSyncBadge();
 }
 
 function parcelRow(parcel) {
@@ -1502,7 +1543,7 @@ async function syncParcelToSupabase(parcel) {
   return true;
 }
 
-async function syncObservationToSupabase(parcelId, observation) {
+async function syncObservationToSupabase(parcelId, observation, options = {}) {
   if (!supabaseClient || !isAdmin) return false;
   const { error } = await supabaseClient.from('observations').upsert({
     parcel_id: parcelId,
@@ -1513,10 +1554,241 @@ async function syncObservationToSupabase(parcelId, observation) {
   }, { onConflict: 'parcel_id,obs_date,stage,bud_percentage' });
   if (error) {
     console.error(error);
+    if (options.queueOnNetworkError && isLikelyNetworkError(error)) {
+      queueOfflineObservation(parcelId, observation);
+      mergePendingIntoState();
+      loadParcelIntoForm();
+      updateSyncBadge();
+      toast('Réseau indisponible : observation conservée sur le téléphone.');
+      return false;
+    }
     toast(`Observation non enregistrée : ${error.message}`);
     return false;
   }
   return true;
+}
+
+
+function initOfflineSync() {
+  window.addEventListener('online', async () => {
+    updateSyncBadge();
+    await syncPendingObservations();
+    if (state.parcels.length) {
+      loadCachedWeather();
+      refreshWeather(false);
+    }
+  });
+  window.addEventListener('offline', () => {
+    updateSyncBadge();
+    toast('Hors connexion : les nouveaux relevés seront conservés sur ce téléphone.');
+  });
+  updateSyncBadge();
+}
+
+function getOfflineQueue() {
+  try {
+    const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn('File hors connexion illisible', error);
+    return [];
+  }
+}
+
+function saveOfflineQueue(queue) {
+  try {
+    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+  } catch (error) {
+    console.error('Impossible de sauvegarder le relevé hors connexion', error);
+  }
+}
+
+function queueOfflineObservation(parcelId, observation) {
+  const queue = getOfflineQueue();
+  const existing = queue.find(item =>
+    item.parcelId === parcelId &&
+    item.date === observation.date &&
+    item.stage === observation.stage &&
+    Number(item.percentage || 50) === Number(observation.percentage || 50)
+  );
+  if (existing) return existing;
+  const item = {
+    localId: `offline_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    parcelId,
+    date: observation.date,
+    stage: observation.stage,
+    percentage: Number(observation.percentage || 50),
+    createdAt: new Date().toISOString()
+  };
+  queue.push(item);
+  saveOfflineQueue(queue);
+  return item;
+}
+
+function removePendingObservation(localId) {
+  saveOfflineQueue(getOfflineQueue().filter(item => item.localId !== localId));
+}
+
+function mergePendingIntoState() {
+  const queue = getOfflineQueue();
+  state.parcels.forEach(parcel => {
+    parcel.observations = (parcel.observations || []).filter(obs => !obs.pending);
+    queue.filter(item => item.parcelId === parcel.id).forEach(item => {
+      const duplicate = parcel.observations.some(obs =>
+        obs.date === item.date &&
+        obs.stage === item.stage &&
+        Number(obs.percentage || 50) === Number(item.percentage || 50)
+      );
+      if (!duplicate) {
+        parcel.observations.push({
+          id: item.localId,
+          date: item.date,
+          stage: item.stage,
+          percentage: Number(item.percentage || 50),
+          pending: true
+        });
+      }
+    });
+  });
+}
+
+function saveRemoteCache() {
+  try {
+    const clean = {
+      savedAt: new Date().toISOString(),
+      activeParcelId: state.activeParcelId,
+      parcels: state.parcels.map(parcel => ({
+        ...parcel,
+        observations: (parcel.observations || []).filter(obs => !obs.pending)
+      }))
+    };
+    localStorage.setItem(REMOTE_CACHE_KEY, JSON.stringify(clean));
+  } catch (error) {
+    console.warn('Cache des parcelles impossible', error);
+  }
+}
+
+function loadRemoteCache() {
+  try {
+    const raw = localStorage.getItem(REMOTE_CACHE_KEY);
+    if (!raw) return false;
+    const cached = JSON.parse(raw);
+    if (!cached || !Array.isArray(cached.parcels)) return false;
+    state = {
+      parcels: cached.parcels,
+      activeParcelId: cached.activeParcelId || cached.parcels[0]?.id || null
+    };
+    normalizeState();
+    return true;
+  } catch (error) {
+    console.warn('Cache des parcelles illisible', error);
+    return false;
+  }
+}
+
+async function syncPendingObservations() {
+  if (isSyncingPending || !navigator.onLine || !supabaseClient || !isAdmin) {
+    updateSyncBadge();
+    return;
+  }
+  let queue = getOfflineQueue();
+  if (!queue.length) {
+    updateSyncBadge();
+    return;
+  }
+
+  isSyncingPending = true;
+  updateSyncBadge();
+  let synced = 0;
+  const remaining = [];
+
+  for (const item of queue) {
+    const { error } = await supabaseClient.from('observations').upsert({
+      parcel_id: item.parcelId,
+      obs_date: item.date,
+      stage: item.stage,
+      bud_percentage: Number(item.percentage || 50),
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'parcel_id,obs_date,stage,bud_percentage' });
+
+    if (error) {
+      console.error('Synchronisation différée impossible', error);
+      remaining.push(item);
+      if (isLikelyNetworkError(error)) {
+        const currentIndex = queue.indexOf(item);
+        remaining.push(...queue.slice(currentIndex + 1));
+        break;
+      }
+    } else {
+      synced += 1;
+    }
+  }
+
+  saveOfflineQueue(dedupeQueue(remaining));
+  isSyncingPending = false;
+
+  if (synced > 0) {
+    await loadRemoteData();
+    renderExploitationSelect();
+    renderParcelSelect();
+    loadParcelIntoForm();
+    if (state.parcels.length) {
+      loadCachedWeather();
+      await refreshWeather(false);
+    }
+    toast(`${synced} relevé${synced > 1 ? 's' : ''} synchronisé${synced > 1 ? 's' : ''}.`);
+  } else {
+    mergePendingIntoState();
+    renderObservations();
+  }
+  updateSyncBadge();
+}
+
+function dedupeQueue(queue) {
+  const seen = new Set();
+  return queue.filter(item => {
+    const key = `${item.parcelId}|${item.date}|${item.stage}|${Number(item.percentage || 50)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function updateSyncBadge() {
+  if (!els.dataModeBadge) return;
+  const pendingCount = getOfflineQueue().length;
+  if (!navigator.onLine) {
+    els.dataModeBadge.textContent = pendingCount
+      ? `Hors connexion · ${pendingCount} à synchroniser`
+      : 'Hors connexion';
+    els.dataModeBadge.classList.remove('hidden');
+    els.dataModeBadge.classList.add('offline-badge');
+    return;
+  }
+  if (isSyncingPending) {
+    els.dataModeBadge.textContent = 'Synchronisation…';
+    els.dataModeBadge.classList.remove('hidden');
+    els.dataModeBadge.classList.add('offline-badge');
+    return;
+  }
+  if (pendingCount) {
+    els.dataModeBadge.textContent = `${pendingCount} à synchroniser`;
+    els.dataModeBadge.classList.remove('hidden');
+    els.dataModeBadge.classList.add('offline-badge');
+    return;
+  }
+  els.dataModeBadge.classList.add('hidden');
+  els.dataModeBadge.classList.remove('offline-badge');
+}
+
+function isLikelyNetworkError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return !navigator.onLine ||
+    message.includes('failed to fetch') ||
+    message.includes('network') ||
+    message.includes('fetch') ||
+    message.includes('timeout');
 }
 
 function getModelForVariety(varietyId) {
